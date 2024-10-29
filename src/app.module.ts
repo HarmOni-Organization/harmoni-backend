@@ -5,6 +5,7 @@ import { AppController } from './app.controller';
 import { MongooseModule } from '@nestjs/mongoose';
 // import { validate } from 'dtos/env.dto';
 import { UserModule } from './user/user.module';
+import { SyncModule } from './sync/sync.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { UserModule } from './user/user.module';
       }),
     }),
     UserModule,
+    SyncModule,
   ],
   controllers: [AppController],
   providers: [AppService],
