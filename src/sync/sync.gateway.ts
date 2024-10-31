@@ -6,8 +6,8 @@ import {
   OnGatewayDisconnect,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { generateRoomId, checkFileConsistency, getRoomState, updateUserTypingStatus } from './syncUtils'; // Importing the utils
-import { UserInfo, RoomState, FileInfo } from './types'; // Assuming types are defined in a shared file
+import { generateRoomId, checkFileConsistency, getRoomState, updateUserTypingStatus } from './syncUtils';
+import { UserInfo, RoomState, FileInfo } from './types';
 
 const roomStates: Record<string, RoomState> = {}; // Store room states
 const roomUsers: Record<string, UserInfo[]> = {}; // Store room members
@@ -44,13 +44,13 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  // Generate roomId if not provided, handle optional room password
+  // Join room and setup room data if necessary
   @SubscribeMessage('joinRoom')
   handleJoinRoom(client: Socket, payload: { roomId?: string; username: string; roomPassword?: string }): void {
     let roomId = payload.roomId;
     if (!roomId) {
-      roomId = generateRoomId(); // Use the util function to generate a new roomId
-      client.emit('roomIdGenerated', roomId); // Send generated roomId to user
+      roomId = generateRoomId();
+      client.emit('roomIdGenerated', roomId);
     }
 
     client.join(roomId);
@@ -67,7 +67,7 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
         syncInfo: {
           time: 0,
           isPlaying: false,
-          syncErrorMargin: 0.5, // Default sync error margin
+          syncErrorMargin: 0.5,
         },
       };
       if (payload.roomPassword) {
@@ -79,8 +79,8 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
     roomUsers[roomId].push({
       userId: client.id,
       username: payload.username,
-      isHost: roomUsers[roomId].length === 0, // First user is the host
-      isTyping: false, // New typing status property
+      isHost: roomUsers[roomId].length === 0,
+      isTyping: false,
       fileInfo: {
         fileHash: '',
         fileSize: 0,
@@ -94,15 +94,32 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.broadcastFullRoomState(roomId);
   }
 
-  // Update syncInfo (frequent updates)
-  @SubscribeMessage('syncUpdate')
-  handleSyncUpdate(client: Socket, payload: { roomId: string; time: number; isPlaying: boolean }): void {
+  // Handle playback events separately
+  @SubscribeMessage('playbackEvent')
+  handlePlaybackEvent(client: Socket, payload: { roomId: string; eventType: 'play' | 'pause' | 'seek'; time?: number }): void {
     const roomState = roomStates[payload.roomId];
-    if (roomState) {
-      roomState.syncInfo.time = payload.time;
-      roomState.syncInfo.isPlaying = payload.isPlaying;
-      this.server.to(payload.roomId).emit('syncTime', { time: roomState.syncInfo.time, isPlaying: roomState.syncInfo.isPlaying });
+    if (!roomState) return;
+
+    switch (payload.eventType) {
+      case 'play':
+        roomState.syncInfo.isPlaying = true;
+        break;
+      case 'pause':
+        roomState.syncInfo.isPlaying = false;
+        break;
+      case 'seek':
+        if (payload.time !== undefined) {
+          roomState.syncInfo.time = payload.time;
+        }
+        break;
     }
+
+    // Emit the playback event to all users in the room
+    this.server.to(payload.roomId).emit('playbackUpdate', {
+      eventType: payload.eventType,
+      time: roomState.syncInfo.time,
+      isPlaying: roomState.syncInfo.isPlaying,
+    });
   }
 
   // Typing event listener
@@ -110,15 +127,11 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
   handleUserTyping(client: Socket, payload: { roomId: string; userId: string; isTyping: boolean }): void {
     const { roomId, userId, isTyping } = payload;
     const room = roomUsers[roomId];
-    if (!room) return; // Room doesn't exist
+    if (!room) return;
 
-    // Find user in the room
     const user = room.find(u => u.userId === userId);
     if (user) {
-      // Update typing status
       updateUserTypingStatus(user, isTyping);
-
-      // Broadcast to other room members
       this.broadcastTypingStatus(roomId, user);
     }
   }
@@ -130,8 +143,6 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
       userId: user.userId,
       isTyping: user.isTyping,
     };
-
-    // Emit to all clients in the room except the user themselves
     this.server.to(roomId).emit('typingStatusUpdate', typingUpdate);
     console.log(`Broadcasting typing status in room ${roomId}:`, typingUpdate);
   }
@@ -153,7 +164,7 @@ export class SyncGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   // Broadcast full room state
   broadcastFullRoomState(roomId: string): void {
-    const roomState = getRoomState(roomStates, roomUsers, roomId); // Use the util function
+    const roomState = getRoomState(roomStates, roomUsers, roomId);
     if (roomState) {
       this.server.to(roomId).emit('fullRoomState', roomState);
     }
