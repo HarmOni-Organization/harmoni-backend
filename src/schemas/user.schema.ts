@@ -1,25 +1,31 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { UUID } from 'crypto';
 import { Document } from 'mongoose';
+import { v4 as uuidv4 } from 'uuid';
 
-// Create a User document interface
-export type UserDocument = User & Document;
-
-// Define the User schema
 @Schema()
-export class User {
-  @Prop({ required: true })
-  userId: UUID
-  
-  @Prop({ required: true })
-  username: string;
+export class User extends Document {
+  @Prop({ required: true, unique: true })
+  userId: string; // Unique user ID generated upon registration
+
+  @Prop({ required: true, unique: true })
+  username: string; // Username chosen by the user, must be unique
+
+  @Prop({ required: true, unique: true })
+  email: string; // User's email, also unique to prevent duplicate accounts
 
   @Prop({ required: true })
-  email: string;
+  passwordHash: string; // Hashed password for secure storage
 
-  @Prop()
-  age?: number; // Optional
+  @Prop({ default: Date.now })
+  createdAt: Date; // Timestamp for when the user was created
 }
 
-// Create a Mongoose schema factory
 export const UserSchema = SchemaFactory.createForClass(User);
+
+// Middleware to generate a unique user ID on registration
+UserSchema.pre<User>('save', function (next) {
+  if (!this.userId) {
+    this.userId = uuidv4(); // Generate UUID for new users if not already set
+  }
+  next();
+});

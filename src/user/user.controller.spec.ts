@@ -1,19 +1,18 @@
-// src/user/user.controller.ts
+import { Test, TestingModule } from '@nestjs/testing';
+import { UserController } from './user.controller';
 
-import { Controller, Get, Post, Body } from '@nestjs/common';
-import { UserService } from './user.service';
+describe('UserController', () => {
+  let controller: UserController;
 
-@Controller('user')
-export class UserController {
-  constructor(private readonly userService: UserService) {}
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      controllers: [UserController],
+    }).compile();
 
-  @Post('create')
-  async create(@Body() body: { username: string; email: string; age?: number }) {
-    return this.userService.createUser(body.username, body.email, body.age);
-  }
+    controller = module.get<UserController>(UserController);
+  });
 
-  @Get()
-  async findAll() {
-    return this.userService.findAll();
-  }
-}
+  it('should be defined', () => {
+    expect(controller).toBeDefined();
+  });
+});
