@@ -22,6 +22,7 @@ export class AuthController {
 
   @Post('register')
   async register(@Body() registerDto: RegisterDto, @Res() res: Response) {
+    
     const existingUser = await this.authService.findUserByEmail(registerDto.email);
     if (existingUser) {
       return res.status(HttpStatus.CONFLICT).json({ message: 'Email already in use' });

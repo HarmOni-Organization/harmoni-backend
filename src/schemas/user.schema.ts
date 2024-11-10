@@ -7,7 +7,7 @@ export class User extends Document {
   @Prop({ required: true, unique: true })
   userId: string; // Unique user ID generated upon registration
 
-  @Prop({ required: true, unique: true })
+  @Prop({ required: false, unique: true })
   username: string; // Username chosen by the user, must be unique
 
   @Prop({ required: true, unique: true })
@@ -18,6 +18,12 @@ export class User extends Document {
 
   @Prop({ default: Date.now })
   createdAt: Date; // Timestamp for when the user was created
+
+  @Prop({ required: false })
+  firstName: string; // User first name
+
+  @Prop({ required: false })
+  lastName: string; // User last name
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
