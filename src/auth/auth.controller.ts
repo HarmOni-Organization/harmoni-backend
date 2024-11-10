@@ -16,19 +16,20 @@ export class AuthController {
     if (!user) {
       return res.status(HttpStatus.UNAUTHORIZED).json({ message: 'Invalid credentials' });
     }
-    const token = await this.authService.generateToken(user);
+    const token = this.authService.generateToken(user);
     return res.status(HttpStatus.OK).json({ accessToken: token });
   }
 
   @Post('register')
   async register(@Body() registerDto: RegisterDto, @Res() res: Response) {
-    
-    const existingUser = await this.authService.findUserByEmail(registerDto.email);
-    if (existingUser) {
-      return res.status(HttpStatus.CONFLICT).json({ message: 'Email already in use' });
+    try {
+      const { user, token } = await this.authService.registerUser(registerDto);
+      return res.status(HttpStatus.CREATED).json({ user, token });
+    } catch (error) {
+      return res.status(error.status || HttpStatus.INTERNAL_SERVER_ERROR).json({
+        message: error.message || 'Registration failed',
+      });
     }
-    const newUser = await this.authService.registerUser(registerDto);
-    return res.status(HttpStatus.CREATED).json({ message: 'User registered successfully', userId: newUser.id });
   }
 
   @Get('verify-token')

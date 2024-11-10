@@ -21,22 +21,66 @@ export class AuthService {
     return null;
   }
 
-  async generateToken(user: any): Promise<string> {
-    const payload = { userId: user.id, email: user.email };
-    return this.jwtService.sign(payload);
-  }
-
-  async registerUser(registerDto: RegisterDto): Promise<any> {
-    const hashedPassword = await bcrypt.hash(registerDto.password, 10);
-    
-    const newUser = await this.userService.createUser({
-      ...registerDto,
-      password: hashedPassword,
-    });
-
-    return newUser;
-  }
-
+    /**
+   * Register a new user, hash their password, save to database, and return a token.
+   * @param registerDto - Data Transfer Object containing user registration details.
+   * @returns - An object containing user data and an authentication token.
+   */
+    async registerUser(registerDto: RegisterDto): Promise<{ user: any; token: string }> {
+      try {
+        // Check if the email or username already exists
+        const existingUser = await this.userService.findOneByEmail(registerDto.email);
+        if (existingUser) {
+          throw new HttpException('Email already in use', HttpStatus.CONFLICT);
+        }
+  
+        // Hash the password for secure storage
+        const hashedPassword = await bcrypt.hash(registerDto.password, 10);
+  
+        // Create the user object with hashed password and generate userId
+        const newUser = await this.userService.createUser({
+          ...registerDto,
+          password: hashedPassword,
+        });
+  
+        // Generate a JWT token for the new user
+        const token = this.generateToken(newUser);
+  
+        // Exclude sensitive information (passwordHash) from the returned user data
+        const userData = {
+          userId: newUser.userId,
+          username: newUser.username,
+          email: newUser.email,
+          createdAt: newUser.createdAt,
+        };
+  
+        return { user: userData, token };
+      } catch (error) {
+        // Enhanced error logging for debugging
+        console.error("Registration Error:", error.message, {
+          stack: error.stack,
+          details: error,
+        });
+  
+        // Return a generic error message for unexpected errors
+        throw new HttpException(
+          error.message || 'Registration failed due to a server error',
+          error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+        );
+      }
+    }
+  
+    /**
+     * Generate a JWT token for authentication.
+     * @param user - The user object containing essential user information.
+     * @returns - A JWT token.
+     */
+    public generateToken(user: any): string {
+      const payload = { userId: user.userId, email: user.email };
+      return this.jwtService.sign(payload);
+    }
+  
+  
   async isTokenValid(token: string): Promise<boolean> {
     try {
       await this.jwtService.verifyAsync(token);

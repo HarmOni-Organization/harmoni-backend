@@ -3,6 +3,7 @@ import { Model } from 'mongoose';
 import { InjectModel } from '@nestjs/mongoose';
 import { User } from '../schemas/user.schema';
 import { RegisterDto } from '../dto';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class UserService {
@@ -13,36 +14,27 @@ export class UserService {
   }
 
   async createUser(userData: RegisterDto): Promise<User> {
-    // Ensure the password is hashed before assigning to passwordHash
-    const hashedPassword = userData.password
-  
-    console.log('User Data Before Save:', {
-      ...userData,
-      passwordHash: hashedPassword,
-    });
-  
-    // Create the new user with hashed password and other fields
-    const newUser = new this.userModel({
-      ...userData,
-      passwordHash: hashedPassword,
-    });
-  
-    // Assign userId based on the MongoDB-generated _id
-    newUser.userId = `${newUser._id}`;
-  
     try {
-      console.log("Attempting to save newUser:", newUser);
-      const savedUser = await newUser.save();
-      console.log("User created successfully:", savedUser);
-      return savedUser;
+      const hashedPassword = await bcrypt.hash(userData.password, 10);
+      const newUser = new this.userModel({
+        ...userData,
+        passwordHash: hashedPassword,
+      });
+  
+      // Set userId as the MongoDB _id for convenience
+      newUser.userId = `${newUser._id}`;
+  
+      // Attempt to save the new user
+      return await newUser.save();
     } catch (error) {
-      console.error("Error while saving newUser:", error);
+      console.error("User Creation Error:", error.message, { details: error });
       throw new HttpException(
-        'Error creating user: ' + error.message,
+        'Failed to create user',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
+  
 
   async findOneById(id: string): Promise<User | null> {
     return this.userModel.findById(id).exec();
