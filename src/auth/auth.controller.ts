@@ -24,7 +24,7 @@ export class AuthController {
   async register(@Body() registerDto: RegisterDto, @Res() res: Response) {
     try {
       const { user, token } = await this.authService.registerUser(registerDto);
-      return res.status(HttpStatus.CREATED).json({ user, token });
+      return res.status(HttpStatus.CREATED).json({ accessToken:token, userData:user });
     } catch (error) {
       return res.status(error.status || HttpStatus.INTERNAL_SERVER_ERROR).json({
         message: error.message || 'Registration failed',
