@@ -1,7 +1,7 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UserService } from '../user/user.service';
-import { RegisterDto } from '../dto';
+import { RegisterDto, LoginDto } from '../dto';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
@@ -11,75 +11,60 @@ export class AuthService {
     private readonly userService: UserService,
   ) {}
 
-  // Validate the user's credentials
-  async validateUser(email: string, password: string): Promise<any> {
-    const user = await this.userService.findOneByEmail(email);
-    if (user && await bcrypt.compare(password, user.passwordHash)) {
-      return user;
+  /**
+   * Registers a new user, hashes their password, and returns user data with a token.
+   */
+  async registerUser(registerDto: RegisterDto): Promise<{ user: any; token: string }> {
+    const existingUser = await this.userService.findOneByEmail(registerDto.email);
+    if (existingUser) {
+      throw new HttpException('Email is already in use', HttpStatus.CONFLICT);
     }
-    return null;
+
+    const hashedPassword = await bcrypt.hash(registerDto.password, 10);
+    const newUser = await this.userService.createUser({
+      ...registerDto,
+      password: hashedPassword,
+    });
+
+    const token = this.generateToken(newUser);
+    const userData = {
+      userId: newUser.userId,
+      username: newUser.username,
+      email: newUser.email,
+      createdAt: newUser.createdAt,
+    };
+
+    return { user: userData, token };
   }
 
-    /**
-   * Register a new user, hash their password, save to database, and return a token.
-   * @param registerDto - Data Transfer Object containing user registration details.
-   * @returns - An object containing user data and an authentication token.
+  /**
+   * Logs in an existing user and returns user data with a token.
    */
-    async registerUser(registerDto: RegisterDto): Promise<{ user: any; token: string }> {
-      try {
-        // Check if the email or username already exists
-        const existingUser = await this.userService.findOneByEmail(registerDto.email);
-        if (existingUser) {
-          throw new HttpException('Email already in use', HttpStatus.CONFLICT);
-        }
-  
-        // Hash the password for secure storage
-        const hashedPassword = await bcrypt.hash(registerDto.password, 10);
-  
-        // Create the user object with hashed password and generate userId
-        const newUser = await this.userService.createUser({
-          ...registerDto,
-          password: hashedPassword,
-        });
-  
-        // Generate a JWT token for the new user
-        const token = this.generateToken(newUser);
-  
-        // Exclude sensitive information (passwordHash) from the returned user data
-        const userData = {
-          userId: newUser.userId,
-          username: newUser.username,
-          email: newUser.email,
-          createdAt: newUser.createdAt,
-        };
-  
-        return { user: userData, token };
-      } catch (error) {
-        // Enhanced error logging for debugging
-        console.error("Registration Error:", error.message, {
-          stack: error.stack,
-          details: error,
-        });
-  
-        // Return a generic error message for unexpected errors
-        throw new HttpException(
-          error.message || 'Registration failed due to a server error',
-          error.status || HttpStatus.INTERNAL_SERVER_ERROR,
-        );
-      }
+  async loginUser(loginDto: LoginDto): Promise<{ user: any; token: string }> {
+    const user = await this.userService.findOneByEmail(loginDto.email);
+    if (!user || !(await bcrypt.compare(loginDto.password, user.passwordHash))) {
+      throw new HttpException('Invalid credentials', HttpStatus.UNAUTHORIZED);
     }
-  
-    /**
-     * Generate a JWT token for authentication.
-     * @param user - The user object containing essential user information.
-     * @returns - A JWT token.
-     */
-    public generateToken(user: any): string {
-      const payload = { userId: user.userId, email: user.email };
-      return this.jwtService.sign(payload);
-    }
-  
-  
+
+    const token = this.generateToken(user);
+    const userData = {
+      userId: user.userId,
+      username: user.username,
+      email: user.email,
+      createdAt: user.createdAt,
+    };
+
+    return { user: userData, token };
+  }
+
+  /**
+   * Generates a JWT token for the authenticated user.
+   */
+  private generateToken(user: any): string {
+    const payload = { userId: user.userId, email: user.email };
+    return this.jwtService.sign(payload);
+  }
+
   async isTokenValid(token: string): Promise<boolean> {
     try {
       await this.jwtService.verifyAsync(token);
@@ -95,7 +80,7 @@ export class AuthService {
   }
 
   async invalidateToken(token: string): Promise<void> {
-    // Add token to a denylist if required or handle client-side logout
+    // Handle token invalidation logic here, if needed
   }
 
   async refreshAccessToken(refreshToken: string): Promise<string | null> {
@@ -109,9 +94,5 @@ export class AuthService {
     } catch {
       return null;
     }
-  }
-
-  async findUserByEmail(email: string): Promise<any> {
-    return this.userService.findOneByEmail(email);
   }
 }
