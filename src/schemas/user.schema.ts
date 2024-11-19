@@ -7,7 +7,7 @@ export class User extends Document {
   @Prop({ required: true, unique: true })
   userId: string; // Unique user ID generated upon registration
 
-  @Prop({ required: false, unique: true })
+  @Prop({ required: true, unique: true })
   username: string; // Username chosen by the user, must be unique
 
   @Prop({ required: true, unique: true })
