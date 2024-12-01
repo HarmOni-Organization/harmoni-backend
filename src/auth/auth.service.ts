@@ -27,8 +27,12 @@ export class AuthService {
    * @param registerDto - Registration data from the client.
    * @returns User data and JWT token.
    */
-  async registerUser(registerDto: RegisterDto): Promise<{ user: any; token: string }> {
-    const existingUser = await this.userService.findOneByEmail(registerDto.email);
+  async registerUser(
+    registerDto: RegisterDto,
+  ): Promise<{ user: any; token: string }> {
+    const existingUser = await this.userService.findOneByEmail(
+      registerDto.email,
+    );
     if (existingUser) {
       throw new HttpException('Email is already in use', HttpStatus.CONFLICT);
     }
@@ -51,10 +55,12 @@ export class AuthService {
    */
   async validateUser(emailOrUsername: string, password: string) {
     const user = await this.userService.findByEmailOrUsername(emailOrUsername);
-    if (!user) throw new UnauthorizedException(ERROR_MESSAGES.INVALID_CREDENTIALS);
+    if (!user)
+      throw new UnauthorizedException(ERROR_MESSAGES.INVALID_CREDENTIALS);
 
     const isPasswordValid = await bcrypt.compare(password, user.passwordHash); // Compare password
-    if (!isPasswordValid) throw new UnauthorizedException(ERROR_MESSAGES.INVALID_CREDENTIALS);
+    if (!isPasswordValid)
+      throw new UnauthorizedException(ERROR_MESSAGES.INVALID_CREDENTIALS);
 
     return user;
   }
@@ -71,7 +77,6 @@ export class AuthService {
     };
   }
 
-
   /**
    * Invalidates a JWT token by adding it to the blacklist.
    * This token will no longer be considered valid for future requests.
@@ -79,7 +84,10 @@ export class AuthService {
    */
   async invalidateToken(token: string): Promise<void> {
     if (!token) {
-      throw new HttpException('Token is required for logout', HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        'Token is required for logout',
+        HttpStatus.BAD_REQUEST,
+      );
     }
     try {
       await this.jwtService.verifyAsync(token); // Verify token before blacklisting
@@ -108,7 +116,7 @@ export class AuthService {
     }
   }
 
-/**
+  /**
    * Retrieves a user from a valid JWT token.
    * Improved error handling to ensure successful retrieval of user details.
    * @param token - The JWT token.
@@ -116,7 +124,6 @@ export class AuthService {
    */
   async getUserFromToken(token: string): Promise<any> {
     try {
-      
       if (!token) {
         throw new UnauthorizedException('Token is missing');
       }
@@ -127,9 +134,9 @@ export class AuthService {
 
       // Decode and verify the token
       const decoded = await this.jwtService.verifyAsync(token);
-      
+
       const user = await this.userService.findOneById(decoded.userId);
-      
+
       // Check if user exists
       if (!user) {
         throw new UnauthorizedException(ERROR_MESSAGES.USER_NOT_FOUND);
@@ -184,7 +191,11 @@ export class AuthService {
    */
   private generateToken(user: any): string {
     try {
-      const payload = { userId: user.userId, email: user.email, username: user.username };
+      const payload = {
+        userId: user.userId,
+        email: user.email,
+        username: user.username,
+      };
       return this.jwtService.sign(payload);
     } catch (error) {
       console.error('Error generating token:', error.message);
@@ -204,5 +215,37 @@ export class AuthService {
       email: user.email,
       createdAt: user.createdAt,
     };
+  }
+
+  /**
+   * Checks if a username is unique.
+   * @param username - The username to check.
+   * @returns `true` if the username is unique, `false` otherwise.
+   */
+  async isUsernameUnique(username: string): Promise<boolean> {
+    try {
+      const user = await this.userService.findOneByUsername(username);
+      return !user;
+    } catch (error) {
+      console.error('Error checking username uniqueness:', error.message);
+      throw new InternalServerErrorException(
+        'Error checking username uniqueness',
+      );
+    }
+  }
+
+  /**
+   * Checks if an email is unique.
+   * @param email - The email to check.
+   * @returns `true` if the email is unique, `false` otherwise.
+   */
+  async isEmailUnique(email: string): Promise<boolean> {
+    try {
+      const user = await this.userService.findOneByEmail(email);
+      return !user;
+    } catch (error) {
+      console.error('Error checking email uniqueness:', error.message);
+      throw new InternalServerErrorException('Error checking email uniqueness');
+    }
   }
 }

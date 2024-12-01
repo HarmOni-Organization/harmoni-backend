@@ -8,6 +8,7 @@ import {
   HttpStatus,
   UseInterceptors,
   Logger,
+  Param,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LoginDto, RegisterDto } from '../dto';
@@ -130,6 +131,54 @@ export class AuthController {
       return res
         .status(HttpStatus.UNAUTHORIZED)
         .json({ message: 'Invalid or expired refresh token' });
+    }
+  }
+
+  /**
+   * Endpoint to check if a username is unique.
+   */
+  @Get('check-username/:username')
+  async checkUsername(
+    @Param('username') username: string,
+    @Res() res: Response,
+  ) {
+    try {
+      const isUsernameUnique =
+        await this.authService.isUsernameUnique(username);
+      return res.status(HttpStatus.OK).json({ isUnique: isUsernameUnique });
+    } catch (error) {
+      this.logger.error(
+        `Error checking username uniqueness: ${error.message}`,
+        error.stack,
+      );
+      return res
+        .status(HttpStatus.INTERNAL_SERVER_ERROR)
+        .json({
+          message: 'Error checking username uniqueness',
+          details: error.message,
+        });
+    }
+  }
+
+  /**
+   * Endpoint to check if an email is unique.
+   */
+  @Get('check-email/:email')
+  async checkEmail(@Param('email') email: string, @Res() res: Response) {
+    try {
+      const isEmailUnique = await this.authService.isEmailUnique(email);
+      return res.status(HttpStatus.OK).json({ isUnique: isEmailUnique });
+    } catch (error) {
+      this.logger.error(
+        `Error checking email uniqueness: ${error.message}`,
+        error.stack,
+      );
+      return res
+        .status(HttpStatus.INTERNAL_SERVER_ERROR)
+        .json({
+          message: 'Error checking email uniqueness',
+          details: error.message,
+        });
     }
   }
 }
