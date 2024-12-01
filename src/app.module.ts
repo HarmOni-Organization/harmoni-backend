@@ -12,8 +12,6 @@ import { SyncModule } from './sync/sync.module';
     // Load environment variables from .env file and validate them
     ConfigModule.forRoot({
       isGlobal: true, // Makes ConfigModule available globally
-      // TODO: Fix the env validation 
-      // validate, // Uncomment if using a validation function for environment variables
     }),
 
     // Configure MongoDB with Mongoose using environment variables

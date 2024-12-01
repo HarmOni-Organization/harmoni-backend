@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
+import { HttpExceptionFilter } from './filters/http-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -16,6 +17,9 @@ async function bootstrap() {
       transform: true, // Automatically transforms query and body payloads into DTO instances
     }),
   );
+
+  // Use the global exception filter
+  app.useGlobalFilters(new HttpExceptionFilter());
 
   // Get the ConfigService instance from the application context
   const configService = app.get<ConfigService>(ConfigService);
