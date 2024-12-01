@@ -18,12 +18,6 @@ export class User extends Document {
 
   @Prop({ default: Date.now })
   createdAt: Date; // Timestamp for when the user was created
-
-  @Prop({ required: false })
-  firstName: string; // User first name
-
-  @Prop({ required: false })
-  lastName: string; // User last name
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

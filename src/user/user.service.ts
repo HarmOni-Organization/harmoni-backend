@@ -32,6 +32,19 @@ export class UserService {
     }
   }
 
+    /**
+   * Finds a user by email or username.
+   * @param emailOrUsername - The email or username to search for.
+   * @returns User document or null if not found.
+   */
+    async findByEmailOrUsername(emailOrUsername: string): Promise<User | null> {
+      return this.userModel
+        .findOne({
+          $or: [{ email: emailOrUsername }, { username: emailOrUsername }],
+        })
+        .exec();
+    }
+
   async findOneById(id: string): Promise<User | null> {
     return this.userModel.findById(id).exec();
   }
