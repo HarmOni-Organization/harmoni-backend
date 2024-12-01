@@ -16,6 +16,15 @@ export class UserService {
   }
 
   /**
+   * Finds a user by their username.
+   * @param username - The username to search for.
+   * @returns User document or null if not found.
+   */
+  async findOneByUsername(username: string): Promise<User | null> {
+    return this.userModel.findOne({ username }).exec();
+  }
+
+  /**
    * Creates a new user in the database.
    */
   async createUser(userData: RegisterDto): Promise<User> {
