@@ -3,8 +3,9 @@ import { Observable } from 'rxjs';
 import { RateLimiterMemory } from 'rate-limiter-flexible';
 
 const rateLimiter = new RateLimiterMemory({
-  points: 5, // Allow 5 requests
-  duration: 60, // Per 60 seconds
+  // TODO: update later in a deferent Environment
+  points: 1000000, // TODO: Search for it's optimal details 
+  duration: 60, // TODO: Search for it's optimal details 
 });
 
 @Injectable()
