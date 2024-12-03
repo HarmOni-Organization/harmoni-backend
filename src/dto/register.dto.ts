@@ -4,15 +4,15 @@ export class RegisterDto {
   @IsNotEmpty()
   @MinLength(3, { message: 'Username must be at least 3 characters long' })
   @MaxLength(30, { message: 'Username must not exceed 30 characters' })
-  @Matches(/^[a-zA-Z0-9._]+$/, {
-    message: 'Username can only contain letters, numbers, underscores, and periods',
+  @Matches(/^[a-zA-Z0-9._-]+$/, {
+    message: 'Username can only contain letters, numbers, underscores, periods, and hyphens',
   })
-  @Matches(/^(?!.*[_.]{2})[a-zA-Z0-9._]+$/, {
-    message: 'Username cannot contain consecutive underscores or periods',
+  @Matches(/^(?!.*[_.-]{2})[a-zA-Z0-9._-]+$/, {
+    message: 'Username cannot contain consecutive underscores, periods, or hyphens',
   })
-  @Matches(/^(?![_.])[a-zA-Z0-9._]+(?<![_.])$/, {
-    message: 'Username cannot start or end with underscores or periods',
-  })
+  @Matches(/^(?![_.-])[a-zA-Z0-9._-]+(?<![_.-])$/, {
+    message: 'Username cannot start or end with underscores, periods, or hyphens',
+  })  
   username: string;
 
   @IsNotEmpty({ message: 'Email address is required' })
