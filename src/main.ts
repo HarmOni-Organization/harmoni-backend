@@ -3,6 +3,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
 import { HttpExceptionFilter } from './filters/http-exception.filter';
+import { LoggingInterceptor } from './interceptors/logging.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -10,6 +11,8 @@ async function bootstrap() {
   app.enableCors({
     origin: '*',
   });
+  // Enable request logger Interceptor globally
+  app.useGlobalInterceptors(new LoggingInterceptor());
 
   // Enable validation globally
   app.useGlobalPipes(
