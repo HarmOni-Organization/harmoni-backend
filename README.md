@@ -1,85 +1,170 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# HarmOni Backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+## Overview
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://coveralls.io/github/nestjs/nest?branch=master" target="_blank"><img src="https://coveralls.io/repos/github/nestjs/nest/badge.svg?branch=master#9" alt="Coverage" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+The **HarmOni Backend** is a **NestJS-powered API** that provides core functionality for the HarmOni platform. It handles **authentication, real-time media synchronization, user management, and more**.
 
-## Description
+This repository is part of the **HarmOni project**, an all-in-one entertainment hub that enables users to **watch together, track media, manage downloads, and interact with AI-powered features**.
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+---
 
-## Project setup
+## 📌 Features
 
-```bash
-$ yarn install
+✅ **Authentication & Authorization** (JWT-based authentication with access & refresh tokens)  
+✅ **User Management** (Profile retrieval and updates)  
+✅ **Real-time Media Sync** (WebSocket-based media synchronization)  
+✅ **Chat & Room Management** (Manage synchronized viewing sessions)  
+✅ **AI & Movie Search** (Integration with AI and external APIs for media search)  
+
+---
+
+## 📂 Project Structure
+
+```
+apps/backend
+├── src
+│   ├── auth                 # Authentication module (Login, Register, Token Management)
+│   ├── user                 # User management module
+│   ├── sync                 # Real-time media synchronization
+│   ├── schemas              # MongoDB database schemas
+│   ├── middlewares          # Custom middlewares (e.g., authentication)
+│   ├── interceptors         # Global interceptors (e.g., logging, rate-limiting)
+│   ├── dto                  # Data Transfer Objects for API validation
+│   ├── constants            # App-wide constants
+│   ├── filters              # Global error handling filters
+│   ├── main.ts              # App entry point
+│   ├── app.module.ts        # Root module
+│   ├── app.service.ts       # Core service logic
+│   ├── config               # Environment variable handling
+│   ├── common               # Shared utilities & types
+├── test                     # End-to-end testing
+├── dist                     # Compiled output (for production)
+├── package.json             # Dependencies and scripts
+├── tsconfig.json            # TypeScript configuration
+└── yarn.lock                # Dependency lock file
 ```
 
-## Compile and run the project
+---
 
-```bash
-# development
-$ yarn run start
+## 🚀 Getting Started
 
-# watch mode
-$ yarn run start:dev
+### **1️⃣ Installation**
 
-# production mode
-$ yarn run start:prod
+Ensure you have the following installed:
+
+- **Node.js** (v16+ recommended)
+- **Yarn** (preferred over npm)
+- **MongoDB** (used as the primary database)
+
+Clone the repository:
+
+```sh
+git clone ...
 ```
 
-## Run tests
+Install dependencies:
 
-```bash
-# unit tests
-$ yarn run test
-
-# e2e tests
-$ yarn run test:e2e
-
-# test coverage
-$ yarn run test:cov
+```sh
+yarn install
 ```
 
-## Resources
+### **2️⃣ Configuration**
 
-Check out a few resources that may come in handy when working with NestJS:
+Copy the environment template and configure it:
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+```sh
+cp .env.example .env
+```
 
-## Support
+Modify the `.env` file to match your database and API configurations.
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+### **3️⃣ Running the Project**
 
-## Stay in touch
+#### **Development Mode**
+```sh
+yarn start:dev
+```
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+#### **Production Mode**
+```sh
+yarn build
+yarn start
+```
 
-## License
+---
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+## 🔗 API Endpoints
+
+### **🔑 Authentication**
+| Method | Endpoint               | Description                   |
+|--------|------------------------|-------------------------------|
+| `POST` | `/auth/register`       | Register a new user           |
+| `POST` | `/auth/login`          | Authenticate user             |
+| `GET`  | `/auth/verify-token`   | Validate access token         |
+| `POST` | `/auth/refresh-token`  | Get a new access token        |
+| `GET`  | `/auth/logout`         | Logout user                   |
+
+### **👤 User Management**
+| Method | Endpoint           | Description                |
+|--------|-------------------|----------------------------|
+| `GET`  | `/user/profile`   | Get user profile details  |
+| `PATCH`| `/user/update`    | Update user information   |
+
+### **📡 Real-Time Sync**
+| Method | Endpoint               | Description                  |
+|--------|------------------------|------------------------------|
+| `POST` | `/sync/join-room`      | Join a synchronized session  |
+| `POST` | `/sync/leave-room`     | Leave a session              |
+| `GET`  | `/sync/get-room/:id`   | Retrieve room details        |
+
+### **🎬 AI & Movie Search**
+| Method | Endpoint                 | Description                        |
+|--------|--------------------------|------------------------------------|
+| `POST` | `/movies/search`         | Search for movies via AI          |
+| `POST` | `/ai/extract-names`      | Extract movie names from metadata |
+
+📌 **A complete Postman collection is available [here](https://alashthevoid.postman.co/workspace/HarmOni-workspace~438d8c99-8ccb-4544-97c2-75b10e23c8ff/collection/13990013-eba5dd01-8e75-4234-9d07-478bbbb85c15?action=share&source=collection_link&creator=13990013).**
+
+---
+
+## 🛠️ Development & Testing
+
+### **Run Unit Tests**
+```sh
+yarn test
+```
+
+### **Run End-to-End Tests**
+```sh
+yarn test:e2e
+```
+
+### **Run Linter & Formatter**
+```sh
+yarn lint
+yarn format
+```
+
+---
+
+## 📝 License
+
+HarmOni is **open-source** and distributed under the **MIT License**.
+
+---
+
+### 🎉 **Join the Development!**
+Contributions are welcome! Feel free to fork the repo, submit issues, or send pull requests.
+
+🚀 **Happy coding!** 🚀
+
+---
+
+### **What’s Improved?**
+- **Better readability** with clear sectioning ✅
+- **More developer-friendly formatting** ✅
+- **Improved descriptions and explanations** ✅
+- **Easier onboarding with clear steps** ✅
+- **Added useful development/testing commands** ✅
+
+Let me know if you need **further refinements** or **additional sections**! 🚀🔥
