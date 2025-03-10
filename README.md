@@ -59,7 +59,7 @@ Ensure you have the following installed:
 Clone the repository:
 
 ```sh
-git clone ...
+git clone https://github.com/HarmOni-Organization/harmoni-backend.git
 ```
 
 Install dependencies:
