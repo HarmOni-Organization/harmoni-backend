@@ -6,6 +6,9 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { AuthModule } from './auth/auth.module';
 import { UserModule } from './user/user.module';
 import { SyncModule } from './sync/sync.module';
+import { CommonModule } from './common/common.module';
+import { MovieModule } from './movie/movie.module';
+import { AiModule } from './ai/ai.module';
 
 @Module({
   imports: [
@@ -20,7 +23,7 @@ import { SyncModule } from './sync/sync.module';
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
         uri: configService.get<string>('DB_URL'), // Retrieve the MongoDB URL from the environment
-        useNewUrlParser: true,  // Ensures compatibility with new connection strings
+        useNewUrlParser: true, // Ensures compatibility with new connection strings
         useUnifiedTopology: true, // Handles reconnection logic internally
       }),
     }),
@@ -28,6 +31,9 @@ import { SyncModule } from './sync/sync.module';
     UserModule,
     SyncModule,
     AuthModule,
+    CommonModule,
+    MovieModule,
+    AiModule,
   ],
   controllers: [AppController],
   providers: [AppService],
