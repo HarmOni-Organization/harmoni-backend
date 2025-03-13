@@ -1,3 +1,13 @@
+/**
+ * Authentication Module
+ *
+ * This module handles all authentication-related functionality including:
+ * - User authentication (login, registration)
+ * - JWT token generation and validation
+ * - User session management
+ * - Authentication middleware
+ */
+
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { MongooseModule } from '@nestjs/mongoose';
@@ -8,7 +18,14 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 
 @Module({
   imports: [
+    // Import UserModule to access user-related functionality
     UserModule,
+
+    /**
+     * JWT Module Configuration
+     * - Uses async configuration to load JWT secret from environment variables
+     * - Sets token expiration to 1 hour
+     */
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -17,10 +34,12 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
         signOptions: { expiresIn: '1h' },
       }),
     }),
+
+    // MongoDB integration for auth-related data
     MongooseModule,
   ],
   controllers: [AuthController],
   providers: [AuthService],
-  exports: [AuthService],
+  exports: [AuthService], // Export AuthService for use in other modules
 })
 export class AuthModule {}

@@ -1,3 +1,8 @@
+/**
+ * Authentication Service
+ * Handles user authentication, token management, and security operations.
+ */
+
 import {
   Injectable,
   HttpException,
@@ -13,8 +18,12 @@ import { ERROR_MESSAGES } from 'src/constants';
 
 @Injectable()
 export class AuthService {
-  // TODO change the token invalidate to a Token Expiry Adjustment:
-  private invalidatedTokens: Set<string> = new Set(); // Store invalidated tokens in memory
+  /**
+   * In-memory storage for invalidated tokens
+   * TODO: Consider moving to Redis or a database for production use
+   * to handle distributed systems and server restarts
+   */
+  private invalidatedTokens: Set<string> = new Set();
 
   constructor(
     private readonly jwtService: JwtService,

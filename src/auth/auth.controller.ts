@@ -1,3 +1,18 @@
+/**
+ * Authentication Controller
+ *
+ * Handles all authentication-related HTTP endpoints including:
+ * - User registration and login
+ * - Token management (verification, refresh, invalidation)
+ * - User validation (username/email uniqueness checks)
+ *
+ * The controller implements:
+ * - Rate limiting to prevent abuse
+ * - Error handling for consistent error responses
+ * - Request logging for debugging and monitoring
+ * - Secure token management
+ */
+
 import {
   Controller,
   Post,
@@ -19,6 +34,10 @@ import { ErrorHandlingInterceptor } from './interceptors/error-handling.intercep
 @Controller('auth')
 @UseInterceptors(RateLimitInterceptor, ErrorHandlingInterceptor) // Apply interceptors for rate limiting and error handling
 export class AuthController {
+  /**
+   * Logger instance for tracking authentication operations
+   * Used for debugging and monitoring authentication-related issues
+   */
   private readonly logger = new Logger(AuthController.name); // Logger for debugging and tracking
 
   constructor(private readonly authService: AuthService) {}
@@ -151,12 +170,10 @@ export class AuthController {
         `Error checking username uniqueness: ${error.message}`,
         error.stack,
       );
-      return res
-        .status(HttpStatus.INTERNAL_SERVER_ERROR)
-        .json({
-          message: 'Error checking username uniqueness',
-          details: error.message,
-        });
+      return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+        message: 'Error checking username uniqueness',
+        details: error.message,
+      });
     }
   }
 
@@ -173,12 +190,10 @@ export class AuthController {
         `Error checking email uniqueness: ${error.message}`,
         error.stack,
       );
-      return res
-        .status(HttpStatus.INTERNAL_SERVER_ERROR)
-        .json({
-          message: 'Error checking email uniqueness',
-          details: error.message,
-        });
+      return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+        message: 'Error checking email uniqueness',
+        details: error.message,
+      });
     }
   }
 }
