@@ -24,12 +24,14 @@ import {
   UseInterceptors,
   Logger,
   Param,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LoginDto, RegisterDto } from '../dto';
 import { Response, Request } from 'express';
 import { RateLimitInterceptor } from './interceptors/rate-limit.interceptor';
 import { ErrorHandlingInterceptor } from './interceptors/error-handling.interceptor';
+import { AUTH_ERROR_MESSAGES } from './auth.types';
 
 @Controller('auth')
 @UseInterceptors(RateLimitInterceptor, ErrorHandlingInterceptor) // Apply interceptors for rate limiting and error handling
@@ -43,42 +45,46 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   /**
-   * Endpoint for user login.
-   * Validates user credentials and returns a JWT token upon success.
-   * @param loginDto - Contains email/username and password.
-   * @param res - HTTP response object.
+   * User Login
+   * - Validates credentials
+   * - Returns JWT token and user data
    */
   @Post('login')
-  async login(@Body() loginDto: LoginDto, @Res() res: Response) {
+  async login(
+    @Body() loginDto: LoginDto,
+    @Res() res: Response,
+  ): Promise<Response> {
     try {
       const { emailOrUsername, password } = loginDto;
       const user = await this.authService.validateUser(
         emailOrUsername,
         password,
-      ); // Validate user credentials
-      const loginResponse = this.authService.login(user); // Generate token and user data
+      );
+      const loginResponse = this.authService.login(user);
       return res.status(HttpStatus.OK).json(loginResponse);
     } catch (error) {
-      this.logger.error(`Login failed: ${error.message}`, error.stack); // Log the error details
+      this.logger.error(`Login failed: ${error.message}`, error.stack);
       return res.status(error.status || HttpStatus.INTERNAL_SERVER_ERROR).json({
-        message: error.message || 'Login failed',
+        message: error.message || AUTH_ERROR_MESSAGES.INVALID_CREDENTIALS,
       });
     }
   }
 
   /**
-   * Endpoint for user registration.
-   * Creates a new user and returns a JWT token upon success.
-   * @param registerDto - Registration details from the client.
-   * @param res - HTTP response object.
+   * User Registration
+   * - Creates new user account
+   * - Returns JWT token and user data
    */
   @Post('register')
-  async register(@Body() registerDto: RegisterDto, @Res() res: Response) {
+  async register(
+    @Body() registerDto: RegisterDto,
+    @Res() res: Response,
+  ): Promise<Response> {
     try {
-      const { user, token } = await this.authService.registerUser(registerDto); // Register user
-      return res.status(HttpStatus.CREATED).json({ accessToken: token, user });
+      const response = await this.authService.registerUser(registerDto);
+      return res.status(HttpStatus.CREATED).json(response);
     } catch (error) {
-      this.logger.error(`Registration failed: ${error.message}`, error.stack); // Log the error details
+      this.logger.error(`Registration failed: ${error.message}`, error.stack);
       return res.status(error.status || HttpStatus.INTERNAL_SERVER_ERROR).json({
         message: error.message || 'Registration failed',
       });
@@ -86,20 +92,20 @@ export class AuthController {
   }
 
   /**
-   * Logs out the user by invalidating the token.
-   * @param req - HTTP request object containing the token.
-   * @param res - HTTP response object.
+   * User Logout
+   * - Invalidates current token
+   * - Removes user session
    */
   @Get('logout')
-  async logout(@Req() req: Request, @Res() res: Response) {
+  async logout(@Req() req: Request, @Res() res: Response): Promise<Response> {
     try {
-      const token = req.headers.authorization?.split(' ')[1]; // Extract token from Authorization header
-      if (token) await this.authService.invalidateToken(token); // Invalidate the token
+      const token = req.headers.authorization?.split(' ')[1];
+      if (token) await this.authService.invalidateToken(token);
       return res
         .status(HttpStatus.OK)
         .json({ message: 'Logged out successfully' });
     } catch (error) {
-      this.logger.error(`Logout failed: ${error.message}`, error.stack); // Log the error details
+      this.logger.error(`Logout failed: ${error.message}`, error.stack);
       return res.status(error.status || HttpStatus.INTERNAL_SERVER_ERROR).json({
         message: error.message || 'Logout failed',
       });
@@ -107,92 +113,134 @@ export class AuthController {
   }
 
   /**
-   * Verifies the validity of a given JWT token.
-   * @param req - HTTP request object containing the token.
-   * @param res - HTTP response object.
+   * Token Verification
+   * - Validates current token
+   * - Returns user data if valid
    */
   @Get('verify-token')
-  async verifyToken(@Req() req: Request, @Res() res: Response) {
+  async verifyToken(
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<Response> {
     try {
-      const token = req.headers.authorization?.split(' ')[1]; // Extract token
-      const isValid = await this.authService.isTokenValid(token); // Check validity
-      if (!isValid) throw new Error('Invalid or expired token');
+      this.logger.debug('Verify token request received');
+      const authHeader = req.headers.authorization;
+      this.logger.debug(`Authorization header: ${authHeader}`);
 
-      const user = await this.authService.getUserFromToken(token); // Decode and fetch user
-      return res.status(HttpStatus.OK).json({ user });
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        this.logger.warn('Invalid authorization header format');
+        return res.status(HttpStatus.UNAUTHORIZED).json({
+          message: AUTH_ERROR_MESSAGES.TOKEN_MISSING,
+        });
+      }
+
+      const token = authHeader.split(' ')[1];
+      this.logger.debug('Token extracted from header');
+
+      const isValid = await this.authService.isTokenValid(token);
+      this.logger.debug(`Token validity check result: ${isValid}`);
+
+      if (!isValid) {
+        this.logger.warn('Token validation failed');
+        return res.status(HttpStatus.UNAUTHORIZED).json({
+          message: AUTH_ERROR_MESSAGES.TOKEN_INVALID,
+        });
+      }
+
+      const user = await this.authService.getUserFromToken(token);
+      this.logger.debug(`User retrieved from token: ${JSON.stringify(user)}`);
+
+      return res.status(HttpStatus.OK).json({
+        user: {
+          userId: user.userId,
+          username: user.username,
+          email: user.email,
+          createdAt: user.createdAt,
+        },
+      });
     } catch (error) {
       this.logger.error(
         `Token verification failed: ${error.message}`,
         error.stack,
-      ); // Log the error
-      return res
-        .status(HttpStatus.UNAUTHORIZED)
-        .json({ message: 'Invalid or expired token' });
-    }
-  }
-
-  /**
-   * Refreshes the access token using a refresh token.
-   * @param req - HTTP request object containing the refresh token.
-   * @param res - HTTP response object.
-   */
-  @Get('refresh-token')
-  async refreshToken(@Req() req: Request, @Res() res: Response) {
-    try {
-      const refreshToken = req.headers.authorization?.split(' ')[1]; // Extract refresh token
-      const newAccessToken =
-        await this.authService.refreshAccessToken(refreshToken); // Generate a new access token
-      if (!newAccessToken) throw new Error('Invalid or expired refresh token');
-
-      return res.status(HttpStatus.OK).json({ accessToken: newAccessToken });
-    } catch (error) {
-      this.logger.error(`Refresh token failed: ${error.message}`, error.stack); // Log the error
-      return res
-        .status(HttpStatus.UNAUTHORIZED)
-        .json({ message: 'Invalid or expired refresh token' });
-    }
-  }
-
-  /**
-   * Endpoint to check if a username is unique.
-   */
-  @Get('check-username/:username')
-  async checkUsername(
-    @Param('username') username: string,
-    @Res() res: Response,
-  ) {
-    try {
-      const isUsernameUnique =
-        await this.authService.isUsernameUnique(username);
-      return res.status(HttpStatus.OK).json({ isUnique: isUsernameUnique });
-    } catch (error) {
-      this.logger.error(
-        `Error checking username uniqueness: ${error.message}`,
-        error.stack,
       );
+
+      if (error instanceof UnauthorizedException) {
+        return res.status(HttpStatus.UNAUTHORIZED).json({
+          message: error.message,
+        });
+      }
+
       return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
-        message: 'Error checking username uniqueness',
-        details: error.message,
+        message: 'An error occurred while verifying the token',
       });
     }
   }
 
   /**
-   * Endpoint to check if an email is unique.
+   * Token Refresh
+   * - Validates refresh token
+   * - Issues new access token
+   */
+  @Get('refresh-token')
+  async refreshToken(
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<Response> {
+    try {
+      const refreshToken = req.headers.authorization?.split(' ')[1];
+      const newAccessToken =
+        await this.authService.refreshAccessToken(refreshToken);
+
+      if (!newAccessToken) {
+        throw new Error(AUTH_ERROR_MESSAGES.TOKEN_INVALID);
+      }
+
+      return res.status(HttpStatus.OK).json({ accessToken: newAccessToken });
+    } catch (error) {
+      this.logger.error(`Refresh token failed: ${error.message}`, error.stack);
+      return res.status(HttpStatus.UNAUTHORIZED).json({
+        message: AUTH_ERROR_MESSAGES.TOKEN_INVALID,
+      });
+    }
+  }
+
+  /**
+   * Username Availability Check
+   * - Validates username uniqueness
+   */
+  @Get('check-username/:username')
+  async checkUsername(
+    @Param('username') username: string,
+    @Res() res: Response,
+  ): Promise<Response> {
+    try {
+      const isUsernameUnique =
+        await this.authService.isUsernameUnique(username);
+      return res.status(HttpStatus.OK).json({ isUnique: isUsernameUnique });
+    } catch (error) {
+      this.logger.error(`Username check failed: ${error.message}`, error.stack);
+      return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+        message: 'Error checking username availability',
+      });
+    }
+  }
+
+  /**
+   * Email Availability Check
+   * - Validates email uniqueness
    */
   @Get('check-email/:email')
-  async checkEmail(@Param('email') email: string, @Res() res: Response) {
+  async checkEmail(
+    @Param('email') email: string,
+    @Res() res: Response,
+  ): Promise<Response> {
     try {
       const isEmailUnique = await this.authService.isEmailUnique(email);
       return res.status(HttpStatus.OK).json({ isUnique: isEmailUnique });
     } catch (error) {
-      this.logger.error(
-        `Error checking email uniqueness: ${error.message}`,
-        error.stack,
-      );
+      this.logger.error(`Email check failed: ${error.message}`, error.stack);
       return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
-        message: 'Error checking email uniqueness',
-        details: error.message,
+        message: 'Error checking email availability',
       });
     }
   }

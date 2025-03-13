@@ -21,6 +21,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UserService } from '../user/user.service';
+import { AUTH_ERROR_MESSAGES } from './auth.types';
 
 @Injectable()
 export class AuthMiddleware implements NestMiddleware {
@@ -36,22 +37,20 @@ export class AuthMiddleware implements NestMiddleware {
    * @param next - Function to call the next middleware
    * @throws UnauthorizedException if token is missing or invalid
    */
-  async use(req: any, res: any, next: () => void) {
-    // Extract token from Authorization header
+  async use(req: any, res: any, next: () => void): Promise<void> {
     const authHeader = req.headers.authorization;
-    if (!authHeader)
-      throw new UnauthorizedException('Authorization header missing');
+    if (!authHeader) {
+      throw new UnauthorizedException(AUTH_ERROR_MESSAGES.TOKEN_MISSING);
+    }
 
-    // Get the token part (remove 'Bearer ' prefix)
     const token = authHeader.split(' ')[1];
     try {
-      // Verify token and get user data
-      const decoded = this.jwtService.verify(token);
-      req.user = await this.userService.findOneById(decoded.sub);
+      const decoded = await this.jwtService.verifyAsync(token);
+      req.user = await this.userService.findOneById(decoded.userId);
       next();
     } catch (error) {
       console.error('Authentication failed:', error.message);
-      throw new UnauthorizedException('Invalid token');
+      throw new UnauthorizedException(AUTH_ERROR_MESSAGES.TOKEN_INVALID);
     }
   }
 }
