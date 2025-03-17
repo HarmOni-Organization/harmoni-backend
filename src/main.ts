@@ -33,6 +33,12 @@ async function bootstrap() {
   app.use(bodyParser.json()); // Ensure JSON body is parsed
   app.use(bodyParser.urlencoded({ extended: true }));
 
+  // Log all incoming requests
+  app.use((req, res, next) => {
+    console.log(`Received request: ${req.method} ${req.url}`);
+    next();
+  });
+
   /**
    * Global Interceptors
    * - LoggingInterceptor: Logs all incoming HTTP requests
