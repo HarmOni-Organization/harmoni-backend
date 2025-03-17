@@ -10,6 +10,7 @@ import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
 import { HttpExceptionFilter } from './filters/http-exception.filter';
 import { LoggingInterceptor } from './interceptors/logging.interceptor';
+import * as bodyParser from 'body-parser';
 
 /**
  * Bootstrap function that initializes the NestJS application
@@ -27,6 +28,9 @@ async function bootstrap() {
   app.enableCors({
     origin: '*',
   });
+
+  app.use(bodyParser.json()); // Ensure JSON body is parsed
+  app.use(bodyParser.urlencoded({ extended: true }));
 
   /**
    * Global Interceptors
