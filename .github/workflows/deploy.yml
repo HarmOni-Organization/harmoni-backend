@@ -29,7 +29,22 @@ jobs:
       - name: Build the project
         run: yarn build
 
+      - name: Verify build output
+        run: |
+          ls -la dist
+          ls -la dist/src
+          echo "Checking for main.js file..."
+          if [ -f "dist/src/main.js" ]; then
+            echo "✅ main.js file found at dist/src/main.js"
+          else
+            echo "❌ main.js file not found!"
+            exit 1
+          fi
+
       - name: Deploy to Railway
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: npx railway up
+        uses: railway/railway-github-action@v1
+        with:
+          version: latest
+          railway_token: ${{ secrets.RAILWAY_TOKEN }}
+          commands: |
+            railway up --detach

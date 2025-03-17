@@ -170,7 +170,7 @@ Contributions are welcome! Feel free to fork the repo, submit issues, or send pu
 
 ---
 
-### **What's Improved?**
+### **What’s Improved?**
 
 - **Better readability** with clear sectioning ✅
 - **More developer-friendly formatting** ✅
@@ -179,59 +179,3 @@ Contributions are welcome! Feel free to fork the repo, submit issues, or send pu
 - **Added useful development/testing commands** ✅
 
 Let me know if you need **further refinements** or **additional sections**! 🚀🔥
-
-## 🚂 Railway Deployment
-
-This project is configured for automated deployment to [Railway](https://railway.app/) using GitHub Actions.
-
-### Setup Instructions
-
-1. **Create a Railway Account**:
-
-   - Sign up at [Railway.app](https://railway.app/)
-   - Create a new project for HarmOni Backend
-
-2. **Get Railway API Token**:
-
-   - Go to Railway Dashboard → Settings → Tokens
-   - Generate a new token with appropriate permissions
-
-3. **Configure GitHub Secrets**:
-
-   - In your GitHub repository, go to Settings → Secrets and Variables → Actions
-   - Add the following secrets:
-     - `RAILWAY_TOKEN`: Your Railway API token
-     - `RAILWAY_SERVICE_NAME`: (Optional) The name of your Railway service (defaults to 'harmoni-backend')
-
-4. **Environment Variables**:
-
-   - In Railway Dashboard, set up the following environment variables:
-     ```
-     PORT=5050
-     DB_URL=<your-mongodb-connection-string>
-     JWT_SECRET=<your-jwt-secret>
-     TMDB_API_KEY=<your-tmdb-api-key>
-     MISTRAL_API_KEY=<your-mistral-api-key>
-     ```
-
-5. **Deployment**:
-   - Pushing to the `development` branch will automatically trigger deployment
-   - Check the GitHub Actions tab for deployment status
-
-### Manual Deployment
-
-If you need to deploy manually:
-
-```bash
-# Install Railway CLI
-npm install -g @railway/cli
-
-# Login to Railway
-railway login
-
-# Link to your project
-railway link
-
-# Deploy
-railway up
-```
