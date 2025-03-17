@@ -1,37 +1,20 @@
-/**
- * Authentication Service
- * Handles user authentication, token management, and security operations.
- */
-
 import {
   Injectable,
   HttpException,
   HttpStatus,
   InternalServerErrorException,
   UnauthorizedException,
-  Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UserService } from '../user/user.service';
 import { RegisterDto } from '../dto';
 import * as bcrypt from 'bcrypt';
-import {
-  AUTH_CONSTANTS,
-  AUTH_ERROR_MESSAGES,
-  AuthResponse,
-  JwtPayload,
-} from './auth.types';
+import { ERROR_MESSAGES } from 'src/constants';
 
 @Injectable()
 export class AuthService {
-  private readonly logger = new Logger(AuthService.name);
-
-  /**
-   * In-memory storage for invalidated tokens
-   * TODO: Consider moving to Redis or a database for production use
-   * to handle distributed systems and server restarts
-   */
-  private invalidatedTokens: Set<string> = new Set();
+  // TODO change the token invalidate to a Token Expiry Adjustment:
+  private invalidatedTokens: Set<string> = new Set(); // Store invalidated tokens in memory
 
   constructor(
     private readonly jwtService: JwtService,
@@ -39,212 +22,193 @@ export class AuthService {
   ) {}
 
   /**
-   * User Registration
-   * - Validates email uniqueness
-   * - Hashes password
-   * - Creates user
-   * - Generates JWT tokens
+   * Registers a new user by hashing their password, saving to the database,
+   * and generating a JWT token.
+   * @param registerDto - Registration data from the client.
+   * @returns User data and JWT token.
    */
-  async registerUser(registerDto: RegisterDto): Promise<AuthResponse> {
+  async registerUser(
+    registerDto: RegisterDto,
+  ): Promise<{ user: any; token: string }> {
     const existingUser = await this.userService.findOneByEmail(
       registerDto.email,
     );
     if (existingUser) {
-      throw new HttpException(
-        AUTH_ERROR_MESSAGES.EMAIL_EXISTS,
-        HttpStatus.CONFLICT,
-      );
+      throw new HttpException('Email is already in use', HttpStatus.CONFLICT);
     }
 
-    const hashedPassword = await bcrypt.hash(
-      registerDto.password,
-      AUTH_CONSTANTS.PASSWORD_SALT_ROUNDS,
-    );
+    const hashedPassword = await bcrypt.hash(registerDto.password, 10); // Hash password
     const newUser = await this.userService.createUser({
       ...registerDto,
       password: hashedPassword,
     });
 
-    return {
-      accessToken: this.generateToken(newUser),
-      refreshToken: this.generateToken(newUser, true),
-      user: this.getPublicUser(newUser),
-    };
+    const token = this.generateToken(newUser); // Generate JWT token
+    return { user: this.getPublicUser(newUser), token }; // Return user data and token
   }
 
   /**
-   * User Authentication
-   * - Validates credentials
-   * - Returns user data if valid
+   * Validates user credentials (email/username and password).
+   * @param emailOrUsername - User's email or username.
+   * @param password - User's password.
+   * @returns The authenticated user object.
    */
   async validateUser(emailOrUsername: string, password: string) {
     const user = await this.userService.findByEmailOrUsername(emailOrUsername);
     if (!user)
-      throw new UnauthorizedException(AUTH_ERROR_MESSAGES.INVALID_CREDENTIALS);
+      throw new UnauthorizedException(ERROR_MESSAGES.INVALID_CREDENTIALS);
 
-    const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
+    const isPasswordValid = await bcrypt.compare(password, user.passwordHash); // Compare password
     if (!isPasswordValid)
-      throw new UnauthorizedException(AUTH_ERROR_MESSAGES.INVALID_CREDENTIALS);
+      throw new UnauthorizedException(ERROR_MESSAGES.INVALID_CREDENTIALS);
 
     return user;
   }
 
   /**
-   * User Login
-   * - Generates access and refresh tokens
-   * - Returns user data and tokens
+   * Logs in a user and generates a JWT token.
+   * @param user - Authenticated user object.
+   * @returns JWT token and user data.
    */
-  login(user: any): AuthResponse {
+  login(user: any) {
     return {
       accessToken: this.generateToken(user),
-      refreshToken: this.generateToken(user, true),
       user: this.getPublicUser(user),
     };
   }
 
   /**
-   * Token Management
-   * - Verifies token before blacklisting
-   * - Handles token invalidation for logout
+   * Invalidates a JWT token by adding it to the blacklist.
+   * This token will no longer be considered valid for future requests.
+   * @param token - The JWT token to invalidate.
    */
   async invalidateToken(token: string): Promise<void> {
     if (!token) {
       throw new HttpException(
-        AUTH_ERROR_MESSAGES.TOKEN_REQUIRED,
+        'Token is required for logout',
         HttpStatus.BAD_REQUEST,
       );
     }
     try {
-      await this.jwtService.verifyAsync(token);
-      this.invalidatedTokens.add(token);
-    } catch (err) {
-      this.logger.error(`Token invalidation failed: ${err.message}`);
-      throw new HttpException(
-        AUTH_ERROR_MESSAGES.TOKEN_INVALID,
-        HttpStatus.UNAUTHORIZED,
-      );
+      await this.jwtService.verifyAsync(token); // Verify token before blacklisting
+      this.invalidatedTokens.add(token); // Add token to blacklist
+      console.log(`Token invalidated: ${token}`);
+    } catch (error) {
+      console.error(`Error invalidating token: ${error.message}`);
+      throw new HttpException('Invalid token', HttpStatus.UNAUTHORIZED);
     }
   }
 
   /**
-   * Token Validation
-   * - Checks blacklist
-   * - Verifies token signature
+   * Checks if a token has been invalidated.
+   * @param token - The JWT token to check.
+   * @returns `true` if the token is valid; `false` if invalidated.
    */
   async isTokenValid(token: string): Promise<boolean> {
-    this.logger.debug('Checking token validity');
     if (this.invalidatedTokens.has(token)) {
-      this.logger.warn('Token found in blacklist');
-      return false;
+      return false; // Token is in the blacklist
     }
     try {
-      await this.jwtService.verifyAsync(token);
-      this.logger.debug('Token signature verified successfully');
+      await this.jwtService.verifyAsync(token); // Verify token signature
       return true;
-    } catch (err) {
-      this.logger.warn(`Token verification failed: ${err.message}`);
+    } catch {
       return false;
     }
   }
 
   /**
-   * Token to User Resolution
-   * - Validates token and checks blacklist
-   * - Retrieves and validates user
+   * Retrieves a user from a valid JWT token.
+   * Improved error handling to ensure successful retrieval of user details.
+   * @param token - The JWT token.
+   * @returns The user object corresponding to the token.
    */
-  async getUserFromToken(token: string): Promise<JwtPayload> {
+  async getUserFromToken(token: string): Promise<any> {
     try {
-      this.logger.debug('Getting user from token');
       if (!token) {
-        this.logger.warn('Token is missing');
-        throw new UnauthorizedException(AUTH_ERROR_MESSAGES.TOKEN_MISSING);
+        throw new UnauthorizedException('Token is missing');
       }
+      // Check if the token has been invalidated
       if (this.invalidatedTokens.has(token)) {
-        this.logger.warn('Token is blacklisted');
-        throw new UnauthorizedException(AUTH_ERROR_MESSAGES.TOKEN_INVALID);
+        throw new UnauthorizedException(ERROR_MESSAGES.INVALID_TOKEN);
       }
 
+      // Decode and verify the token
       const decoded = await this.jwtService.verifyAsync(token);
-      this.logger.debug(
-        `Token decoded successfully: ${JSON.stringify(decoded)}`,
-      );
 
       const user = await this.userService.findOneById(decoded.userId);
-      this.logger.debug(`User lookup result: ${user ? 'Found' : 'Not found'}`);
 
+      // Check if user exists
       if (!user) {
-        this.logger.warn('User not found for token');
-        throw new UnauthorizedException(AUTH_ERROR_MESSAGES.USER_NOT_FOUND);
+        throw new UnauthorizedException(ERROR_MESSAGES.USER_NOT_FOUND);
       }
 
-      const result = {
+      // Return the user data
+      return {
         userId: user.userId,
         username: user.username,
         email: user.email,
         createdAt: user.createdAt,
       };
-      this.logger.debug(`Returning user data: ${JSON.stringify(result)}`);
-      return result;
-    } catch (err) {
-      this.logger.error(
-        `Error getting user from token: ${err.message}`,
-        err.stack,
-      );
-      throw new UnauthorizedException(AUTH_ERROR_MESSAGES.TOKEN_INVALID);
+    } catch (error) {
+      console.error('Error getting user from token:', error.message);
+      throw new UnauthorizedException(ERROR_MESSAGES.INVALID_TOKEN);
     }
   }
 
   /**
-   * Token Refresh
-   * - Validates refresh token
-   * - Generates new access token
+   * Refreshes a user's access token using a refresh token.
+   * Improved error handling and proper verification.
+   * @param refreshToken - The refresh token provided by the user.
+   * @returns A new JWT access token, or throws an error if the refresh token is invalid.
    */
   async refreshAccessToken(refreshToken: string): Promise<string> {
     try {
-      if (!refreshToken)
-        throw new UnauthorizedException(AUTH_ERROR_MESSAGES.TOKEN_MISSING);
+      if (!refreshToken) {
+        throw new UnauthorizedException('Refresh token is missing');
+      }
 
+      // Verify refresh token validity
       const decoded = await this.jwtService.verifyAsync(refreshToken);
+
+      // Fetch user using decoded data
       const user = await this.userService.findOneById(decoded.userId);
+      if (!user) {
+        throw new UnauthorizedException(ERROR_MESSAGES.USER_NOT_FOUND);
+      }
 
-      if (!user)
-        throw new UnauthorizedException(AUTH_ERROR_MESSAGES.USER_NOT_FOUND);
-
+      // Generate a new access token for the user
       return this.generateToken(user);
-    } catch (err) {
-      this.logger.error(`Token refresh failed: ${err.message}`);
-      throw new UnauthorizedException(AUTH_ERROR_MESSAGES.TOKEN_INVALID);
+    } catch (error) {
+      console.error('Error refreshing access token:', error.message);
+      throw new UnauthorizedException(ERROR_MESSAGES.INVALID_TOKEN);
     }
   }
 
   /**
-   * JWT Token Generation
-   * - Creates payload with user data
-   * - Signs token with configured expiry
+   * Generates a JWT token for the authenticated user.
+   * @param user - The user object.
+   * @returns A signed JWT token.
    */
-  private generateToken(user: any, isRefreshToken = false): string {
+  private generateToken(user: any): string {
     try {
-      const payload: JwtPayload = {
+      const payload = {
         userId: user.userId,
         email: user.email,
         username: user.username,
-        createdAt: user.createdAt,
       };
-      return this.jwtService.sign(payload, {
-        expiresIn: isRefreshToken ? '7d' : AUTH_CONSTANTS.TOKEN_EXPIRY,
-      });
-    } catch (err) {
-      this.logger.error(`Token generation failed: ${err.message}`);
+      return this.jwtService.sign(payload);
+    } catch (error) {
+      console.error('Error generating token:', error.message);
       throw new InternalServerErrorException('Failed to generate token');
     }
   }
 
   /**
-   * Public User Data
-   * - Removes sensitive information
-   * - Returns sanitized user object
+   * Extracts public user information for responses.
+   * @param user - The user object.
+   * @returns Public-facing user data.
    */
-  private getPublicUser(user: any): AuthResponse['user'] {
+  private getPublicUser(user: any): any {
     return {
       userId: user.userId,
       username: user.username,
@@ -254,15 +218,16 @@ export class AuthService {
   }
 
   /**
-   * Username Validation
-   * - Checks if username is available
+   * Checks if a username is unique.
+   * @param username - The username to check.
+   * @returns `true` if the username is unique, `false` otherwise.
    */
   async isUsernameUnique(username: string): Promise<boolean> {
     try {
       const user = await this.userService.findOneByUsername(username);
       return !user;
-    } catch (err) {
-      this.logger.error(`Error checking username uniqueness: ${err.message}`);
+    } catch (error) {
+      console.error('Error checking username uniqueness:', error.message);
       throw new InternalServerErrorException(
         'Error checking username uniqueness',
       );
@@ -270,15 +235,16 @@ export class AuthService {
   }
 
   /**
-   * Email Validation
-   * - Checks if email is available
+   * Checks if an email is unique.
+   * @param email - The email to check.
+   * @returns `true` if the email is unique, `false` otherwise.
    */
   async isEmailUnique(email: string): Promise<boolean> {
     try {
       const user = await this.userService.findOneByEmail(email);
       return !user;
-    } catch (err) {
-      this.logger.error(`Error checking email uniqueness: ${err.message}`);
+    } catch (error) {
+      console.error('Error checking email uniqueness:', error.message);
       throw new InternalServerErrorException('Error checking email uniqueness');
     }
   }
