@@ -21,30 +21,15 @@ jobs:
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
-      # - name: Run Lint and Tests
-      #   run: |
-      #     yarn lint
-      #     yarn test
-
       - name: Build the project
-        run: yarn build
-
-      - name: Verify build output
         run: |
-          ls -la dist
-          ls -la dist/src
-          echo "Checking for main.js file..."
-          if [ -f "dist/src/main.js" ]; then
-            echo "✅ main.js file found at dist/src/main.js"
-          else
-            echo "❌ main.js file not found!"
-            exit 1
-          fi
+          yarn build
+          ls -l dist  # Debugging step
+
+      - name: Install Railway CLI (Fix for missing GitHub Action)
+        run: npm install -g @railway/cli
 
       - name: Deploy to Railway
-        uses: railway/railway-github-action@v1
-        with:
-          version: latest
-          railway_token: ${{ secrets.RAILWAY_TOKEN }}
-          commands: |
-            railway up --detach
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway up

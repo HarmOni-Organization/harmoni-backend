@@ -40,6 +40,14 @@ async function bootstrap() {
    */
   app.useGlobalInterceptors(new LoggingInterceptor());
 
+  // Force Express to recognize request methods correctly
+  app.use((req, res, next) => {
+    if (req.method === 'GET' && req.headers['x-original-method']) {
+      req.method = req.headers['x-original-method'];
+    }
+    next();
+  });
+
   /**
    * Global Validation Pipe Configuration
    * - whitelist: Removes properties not defined in DTOs
