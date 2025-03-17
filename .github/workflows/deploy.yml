@@ -30,14 +30,6 @@ jobs:
         run: yarn build
 
       - name: Deploy to Railway
-        uses: railway/railway-github-action@v1
-        with:
-          version: latest
-          railway_token: ${{ secrets.RAILWAY_TOKEN }}
-          service: ${{ secrets.RAILWAY_SERVICE_NAME || 'harmoni-backend' }}
-          environment: production
-          commands: |
-            railway up --detach
-
-      - name: Deployment Status
-        run: echo "Deployment to Railway completed successfully!"
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: npx railway up
