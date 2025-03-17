@@ -26,7 +26,8 @@ async function bootstrap() {
    * Note: In production, you should restrict this to specific origins
    */
   app.enableCors({
-    origin: '*',
+    origin: '*', // Adjust as needed
+    methods: ['GET', 'POST', 'PUT', 'DELETE'], // Ensure all methods are allowed
   });
 
   app.use(bodyParser.json()); // Ensure JSON body is parsed
