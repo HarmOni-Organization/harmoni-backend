@@ -41,6 +41,6 @@ import { AUTH_CONSTANTS } from './auth.types';
   ],
   controllers: [AuthController],
   providers: [AuthService],
-  exports: [AuthService],
+  exports: [AuthService], // Export AuthService for use in other modules
 })
 export class AuthModule {}
