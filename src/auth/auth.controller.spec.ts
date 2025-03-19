@@ -31,9 +31,6 @@ describe('AuthController', () => {
     refreshAccessToken: jest.fn(),
     isUsernameUnique: jest.fn(),
     isEmailUnique: jest.fn(),
-    isTokenValid: jest.fn(),
-    isUsernameAvailable: jest.fn(),
-    isEmailAvailable: jest.fn(),
   };
 
   const mockResponse = {
@@ -181,7 +178,6 @@ describe('AuthController', () => {
     const mockToken = 'mock.jwt.token';
 
     it('should successfully verify token', async () => {
-      mockAuthService.isTokenValid.mockResolvedValue(true);
       mockAuthService.getUserFromToken.mockResolvedValue(mockUser);
       mockRequest.headers = { authorization: `Bearer ${mockToken}` };
 
