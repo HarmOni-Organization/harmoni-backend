@@ -68,6 +68,20 @@ export class AppController {
     };
   }
 
+  @Patch('items/:id')
+  partialUpdateItem(@Param('id') id: string, @Body() patchItemDto: any) {
+    return {
+      message: `This endpoint partially updates an item with ID: ${id}`,
+      method: 'PATCH',
+      receivedData: patchItemDto,
+      patchedItem: {
+        id: parseInt(id),
+        name: `Item ${id} (patched)`,
+        ...patchItemDto,
+      },
+    };
+  }
+
   @Delete('items/:id')
   deleteItem(@Param('id') id: string) {
     return {

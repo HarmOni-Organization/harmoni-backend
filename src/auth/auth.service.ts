@@ -159,11 +159,13 @@ export class AuthService {
         this.logger.warn('Token is missing');
         throw new UnauthorizedException(AUTH_ERROR_MESSAGES.TOKEN_MISSING);
       }
+      // Check if the token has been invalidated
       if (this.invalidatedTokens.has(token)) {
         this.logger.warn('Token is blacklisted');
         throw new UnauthorizedException(AUTH_ERROR_MESSAGES.TOKEN_INVALID);
       }
 
+      // Decode and verify the token
       const decoded = await this.jwtService.verifyAsync(token);
       this.logger.debug(
         `Token decoded successfully: ${JSON.stringify(decoded)}`,
@@ -172,6 +174,7 @@ export class AuthService {
       const user = await this.userService.findOneById(decoded.userId);
       this.logger.debug(`User lookup result: ${user ? 'Found' : 'Not found'}`);
 
+      // Check if user exists
       if (!user) {
         this.logger.warn('User not found for token');
         throw new UnauthorizedException(AUTH_ERROR_MESSAGES.USER_NOT_FOUND);
@@ -204,7 +207,10 @@ export class AuthService {
       if (!refreshToken)
         throw new UnauthorizedException(AUTH_ERROR_MESSAGES.TOKEN_MISSING);
 
+      // Verify refresh token validity
       const decoded = await this.jwtService.verifyAsync(refreshToken);
+
+      // Fetch user using decoded data
       const user = await this.userService.findOneById(decoded.userId);
 
       if (!user)

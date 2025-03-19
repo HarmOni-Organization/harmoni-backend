@@ -62,9 +62,9 @@ async function bootstrap() {
    */
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
+      whitelist: true, // Strips out properties not defined in the DTO
+      forbidNonWhitelisted: true, // Throws an error if extra properties are provided
+      transform: true, // Automatically transforms query and body payloads into DTO instances
     }),
   );
 
@@ -89,6 +89,4 @@ async function bootstrap() {
   await app.listen(port);
   console.log(`Application is running on: http://localhost:${port}`);
 }
-
-// Bootstrap the application
 bootstrap();
