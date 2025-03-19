@@ -2,7 +2,7 @@ const io = require('socket.io-client');
 const fs = require('fs');
 
 // Server URL
-const SERVER_URL = 'http://localhost:5050/watch-together';
+const SERVER_URL = 'http://localhost:5060/watch-together';
 
 // User 2 Authentication Token
 const USER2_TOKEN = 'token';

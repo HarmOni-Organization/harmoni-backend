@@ -1,6 +1,6 @@
 const io = require('socket.io-client');
 
-const socket = io('http://localhost:5050'); // Replace with your server's URL
+const socket = io('http://localhost:5060'); // Replace with your server's URL
 
 socket.on('connect', () => {
   console.log('Connected to server:', socket.id);
