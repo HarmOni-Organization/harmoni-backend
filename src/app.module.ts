@@ -68,7 +68,7 @@ export class AppModule {
         { path: 'auth/check-username/:username', method: RequestMethod.GET },
         { path: 'auth/check-email/:email', method: RequestMethod.GET },
         { path: 'ai/extract-names', method: RequestMethod.POST },
-        { path: '/', method: RequestMethod.GET },
+        { path: 'health', method: RequestMethod.GET },
       )
       .forRoutes('*'); // Apply to all other routes
   }
