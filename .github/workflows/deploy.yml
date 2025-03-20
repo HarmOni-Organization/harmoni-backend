@@ -26,25 +26,25 @@ jobs:
           yarn build
           ls -l dist  # Debugging step
 
-      - name: Debug Secrets
-        run: echo "RAILWAY_TOKEN is set"
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      # - name: Debug Secrets
+      #   run: echo "RAILWAY_TOKEN is set"
+      #   env:
+      #     RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
 
-      - name: Install Railway CLI
-        run: npm install -g @railway/cli
+      # - name: Install Railway CLI
+      #   run: npm install -g @railway/cli
 
-      - name: Authenticate Railway CLI
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: railway login --token $RAILWAY_TOKEN
+      # - name: Authenticate Railway CLI
+      #   env:
+      #     RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      #   run: railway login --token $RAILWAY_TOKEN
 
-      - name: Link Railway Project
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: railway link --project helpful-compassion
+      # - name: Link Railway Project
+      #   env:
+      #     RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      #   run: railway link --project helpful-compassion
 
-      - name: Deploy to Railway
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: railway up --service harmoni-backend
+      # - name: Deploy to Railway
+      #   env:
+      #     RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      #   run: railway up --service harmoni-backend
