@@ -25,7 +25,10 @@ jobs:
         run: |
           yarn build
           ls -l dist  # Debugging step
-
+      - name: Debug Secrets
+        run: echo "RAILWAY_TOKEN is set"
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
       - name: Install Railway CLI (Fix for missing GitHub Action)
         run: npm install -g @railway/cli
 
