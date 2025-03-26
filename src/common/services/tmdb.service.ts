@@ -79,4 +79,45 @@ export class TmdbService {
 
     return movieData;
   }
+
+  async getMovieById(movieId: number) {
+    try {
+      // Fetch full movie details by ID
+      const detailsUrl = `${this.TMDB_API_URL}/movie/${movieId}?api_key=${this.TMDB_API_KEY}&append_to_response=credits,keywords`;
+      const detailsResponse = await this.httpService
+        .get(detailsUrl)
+        .toPromise();
+      const movie = detailsResponse.data;
+
+      // Return the same structure as in searchMoviesByNames
+      return {
+        id: movie.id,
+        title: movie.title,
+        release_date: movie.release_date,
+        overview: movie.overview,
+        runtime: movie.runtime,
+        genres: movie.genres.map((g) => g.name),
+        popularity: movie.popularity,
+        poster_url: `https://image.tmdb.org/t/p/original${movie.poster_path}`,
+        backdrop_url: `https://image.tmdb.org/t/p/original${movie.backdrop_path}`,
+        imdb_rating: movie.vote_average,
+        cast: movie.credits.cast.slice(0, 10).map((c) => ({
+          name: c.name,
+          character: c.character,
+        })),
+        director: movie.credits.crew
+          .filter((crew) => crew.job === 'Director')
+          .map((d) => d.name)
+          .join(', '),
+        crew: movie.credits.crew.slice(0, 10).map((c) => ({
+          name: c.name,
+          job: c.job,
+        })),
+        keywords: movie.keywords.keywords.map((k) => k.name),
+      };
+    } catch (error) {
+      console.error(`Failed to fetch details for movie ID ${movieId}:`, error);
+      throw error;
+    }
+  }
 }

@@ -1,16 +1,20 @@
 import {
   Controller,
   Post,
+  Get,
   UsePipes,
   ValidationPipe,
   Body,
   Query,
   InternalServerErrorException,
   BadRequestException,
+  Param,
+  NotFoundException,
 } from '@nestjs/common';
 import { AiService } from 'src/ai/ai.service';
 import { TmdbService } from 'src/common/services/tmdb.service';
 import { SearchMovieDto, TreeInputDto } from './dto/search-movie.dto';
+import { MovieIdDto } from './dto/movie-id.dto';
 
 @Controller('movies')
 export class MovieController {
@@ -94,6 +98,30 @@ export class MovieController {
       console.error('Movie search failed:', error);
       throw new InternalServerErrorException(
         'Movie search failed. Please try again.',
+      );
+    }
+  }
+
+  @Get(':id')
+  @UsePipes(new ValidationPipe({ transform: true }))
+  async getMovieById(@Param() params: MovieIdDto) {
+    try {
+      const movie = await this.tmdbService.getMovieById(params.id);
+
+      if (!movie) {
+        throw new NotFoundException(`Movie with ID ${params.id} not found`);
+      }
+
+      return movie;
+    } catch (error) {
+      console.error(`Failed to fetch movie with ID ${params.id}:`, error);
+
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+
+      throw new InternalServerErrorException(
+        'Failed to fetch movie details. Please try again later.',
       );
     }
   }
