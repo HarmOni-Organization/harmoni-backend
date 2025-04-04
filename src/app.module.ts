@@ -19,6 +19,7 @@ import { CommonModule } from './common/common.module';
 import { MovieModule } from './movie/movie.module';
 import { AiModule } from './ai/ai.module';
 import { GlobalGateway } from './app.gateway';
+import { PromptModule } from './prompt/prompt.module';
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { GlobalGateway } from './app.gateway';
     CommonModule, // Contains shared utilities and common functionality
     MovieModule, // Manages movie-related operations and data
     AiModule, // Handles AI-powered features and recommendations
+    PromptModule, // Manages user prompts (create, read, update, delete)
     SyncModule,
   ],
   controllers: [AppController],
