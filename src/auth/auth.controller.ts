@@ -25,13 +25,14 @@ import {
   Logger,
   Param,
   UnauthorizedException,
+  BadRequestException,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { LoginDto, RegisterDto } from '../dto';
+import { LoginDto, RegisterDto, RefreshTokenDto } from '../dto';
 import { Response, Request } from 'express';
 import { RateLimitInterceptor } from './interceptors/rate-limit.interceptor';
 import { ErrorHandlingInterceptor } from './interceptors/error-handling.interceptor';
-import { AUTH_ERROR_MESSAGES } from './auth.types';
+import { AUTH_ERROR_MESSAGES, TokenType } from './auth.types';
 
 @Controller('auth')
 @UseInterceptors(RateLimitInterceptor, ErrorHandlingInterceptor) // Apply interceptors for rate limiting and error handling
@@ -52,6 +53,7 @@ export class AuthController {
   @Post('login')
   async login(
     @Body() loginDto: LoginDto,
+    @Req() req: Request,
     @Res() res: Response,
   ): Promise<Response> {
     try {
@@ -60,7 +62,11 @@ export class AuthController {
         emailOrUsername,
         password,
       );
-      const loginResponse = this.authService.login(user);
+
+      // Extract device info from headers or request
+      const deviceInfo = this.extractDeviceInfo(req);
+
+      const loginResponse = await this.authService.login(user, deviceInfo);
       return res.status(HttpStatus.OK).json(loginResponse);
     } catch (error) {
       this.logger.error(`Login failed: ${error.message}`, error.stack);
@@ -137,7 +143,11 @@ export class AuthController {
       const token = authHeader.split(' ')[1];
       this.logger.debug('Token extracted from header');
 
-      const isValid = await this.authService.isTokenValid(token);
+      // Verify the token as an access token specifically
+      const isValid = await this.authService.isTokenValid(
+        token,
+        TokenType.ACCESS,
+      );
       this.logger.debug(`Token validity check result: ${isValid}`);
 
       if (!isValid) {
@@ -147,7 +157,10 @@ export class AuthController {
         });
       }
 
-      const user = await this.authService.getUserFromToken(token);
+      const user = await this.authService.getUserFromToken(
+        token,
+        TokenType.ACCESS,
+      );
       this.logger.debug(`User retrieved from token: ${JSON.stringify(user)}`);
 
       return res.status(HttpStatus.OK).json({
@@ -179,27 +192,51 @@ export class AuthController {
   /**
    * Token Refresh
    * - Validates refresh token
-   * - Issues new access token
+   * - Issues new access token and refresh token
    */
-  @Get('refresh-token')
+  @Post('refresh-token')
   async refreshToken(
+    @Body() refreshTokenDto: RefreshTokenDto,
     @Req() req: Request,
     @Res() res: Response,
   ): Promise<Response> {
     try {
-      const refreshToken = req.headers.authorization?.split(' ')[1];
-      const newAccessToken =
-        await this.authService.refreshAccessToken(refreshToken);
+      // Get token from request body (preferred) or fallback to Authorization header
+      let refreshToken = refreshTokenDto?.refreshToken;
 
-      if (!newAccessToken) {
-        throw new Error(AUTH_ERROR_MESSAGES.TOKEN_INVALID);
+      if (!refreshToken) {
+        // Fallback to Authorization header
+        refreshToken = req.headers.authorization?.split(' ')[1];
       }
 
-      return res.status(HttpStatus.OK).json({ accessToken: newAccessToken });
+      if (!refreshToken) {
+        throw new BadRequestException(
+          AUTH_ERROR_MESSAGES.REFRESH_TOKEN_REQUIRED,
+        );
+      }
+
+      // Extract device info
+      const deviceInfo =
+        refreshTokenDto.deviceInfo || this.extractDeviceInfo(req);
+
+      // Refresh tokens using the service
+      const tokens = await this.authService.refreshTokens(
+        refreshToken,
+        deviceInfo,
+      );
+
+      return res.status(HttpStatus.OK).json(tokens);
     } catch (error) {
       this.logger.error(`Refresh token failed: ${error.message}`, error.stack);
+
+      if (error instanceof BadRequestException) {
+        return res.status(HttpStatus.BAD_REQUEST).json({
+          message: error.message,
+        });
+      }
+
       return res.status(HttpStatus.UNAUTHORIZED).json({
-        message: AUTH_ERROR_MESSAGES.TOKEN_INVALID,
+        message: error.message || AUTH_ERROR_MESSAGES.REFRESH_TOKEN_INVALID,
       });
     }
   }
@@ -243,5 +280,14 @@ export class AuthController {
         message: 'Error checking email availability',
       });
     }
+  }
+
+  /**
+   * Helper to extract device info from request
+   */
+  private extractDeviceInfo(req: Request): string {
+    const userAgent = req.headers['user-agent'] || 'unknown';
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    return `${userAgent} - ${ip}`;
   }
 }
