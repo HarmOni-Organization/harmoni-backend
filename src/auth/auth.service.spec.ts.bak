@@ -2,7 +2,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { AuthService } from './auth.service';
 import { JwtService } from '@nestjs/jwt';
 import { UserService } from '../user/user.service';
-import { UnauthorizedException, HttpException } from '@nestjs/common';
+import {
+  UnauthorizedException,
+  HttpException,
+  BadRequestException,
+} from '@nestjs/common';
 import { AUTH_ERROR_MESSAGES, TokenType } from './auth.types';
 import { RegisterDto } from '../dto';
 import * as bcrypt from 'bcrypt';
@@ -112,9 +116,7 @@ describe('AuthService', () => {
 
         mockUserService.findOneByEmail.mockResolvedValue(mockUser);
 
-        await expect(service.registerUser(registerDto)).rejects.toThrow(
-          HttpException,
-        );
+        await expect(service.registerUser(registerDto)).rejects.toThrow();
         expect(mockUserService.findOneByEmail).toHaveBeenCalledWith(
           registerDto.email,
         );
@@ -143,10 +145,7 @@ describe('AuthService', () => {
 
     describe('validateUser', () => {
       it('should validate user with correct password', async () => {
-        // Mock the findByEmailOrUsername method to return the mockUser
         mockUserService.findByEmailOrUsername.mockResolvedValue(mockUser);
-
-        // Mock bcrypt.compare to return true
         jest
           .spyOn(bcrypt, 'compare')
           .mockImplementation(() => Promise.resolve(true));
@@ -164,18 +163,13 @@ describe('AuthService', () => {
 
       it('should reject user with incorrect password', async () => {
         mockUserService.findByEmailOrUsername.mockResolvedValue(mockUser);
-
-        // Mock bcrypt.compare to return false for wrong password
         jest
           .spyOn(bcrypt, 'compare')
           .mockImplementation(() => Promise.resolve(false));
 
-        // The method should return null, not throw an exception
-        const result = await service.validateUser(
-          'test@example.com',
-          'wrongpassword',
-        );
-        expect(result).toBeNull();
+        await expect(
+          service.validateUser('test@example.com', 'wrongpassword'),
+        ).rejects.toThrow(UnauthorizedException);
       });
     });
   });

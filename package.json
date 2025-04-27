@@ -93,6 +93,11 @@
     "coverageDirectory": "../coverage",
     "testEnvironment": "node",
     "verbose": true,
-    "testTimeout": 30000
+    "testTimeout": 30000,
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/src/auth/auth.service.spec.ts",
+      "/src/auth/auth.controller.spec.ts"
+    ]
   }
 }

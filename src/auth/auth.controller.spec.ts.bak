@@ -112,51 +112,51 @@ describe('AuthController', () => {
 
   describe('login', () => {
     const loginDto: LoginDto = {
-      email: 'test@example.com',
+      emailOrUsername: 'test@example.com',
       password: 'Test123!',
     };
 
     it('should successfully login user', async () => {
       mockAuthService.validateUser.mockResolvedValue(mockUser);
       mockAuthService.login.mockReturnValue(mockAuthResponse);
+      mockRequest.body = loginDto;
+      mockRequest.headers = { 'user-agent': 'test-agent' };
+      mockRequest.ip = '127.0.0.1';
 
-      const request = {
-        headers: { 'user-agent': 'test-agent' },
-        ip: '127.0.0.1',
-      } as unknown as Request;
+      await controller.login(
+        loginDto,
+        mockRequest as unknown as Request,
+        mockResponse as unknown as Response,
+      );
 
-      const response = {
-        status: jest.fn().mockReturnThis(),
-        json: jest.fn(),
-      } as unknown as Response;
-
-      await controller.login(loginDto, request, response);
-
-      expect(response.status).toHaveBeenCalledWith(200);
-      expect(response.json).toHaveBeenCalledWith(mockAuthResponse);
+      expect(mockResponse.status).toHaveBeenCalledWith(200);
+      expect(mockResponse.json).toHaveBeenCalledWith(mockAuthResponse);
       expect(mockAuthService.validateUser).toHaveBeenCalledWith(
-        loginDto.email,
+        loginDto.emailOrUsername,
         loginDto.password,
+      );
+      expect(mockAuthService.login).toHaveBeenCalledWith(
+        mockUser,
+        expect.any(String),
       );
     });
 
     it('should handle login errors', async () => {
-      mockAuthService.validateUser.mockResolvedValue(null);
+      mockAuthService.validateUser.mockRejectedValue(
+        new UnauthorizedException(AUTH_ERROR_MESSAGES.INVALID_CREDENTIALS),
+      );
+      mockRequest.body = loginDto;
+      mockRequest.headers = { 'user-agent': 'test-agent' };
+      mockRequest.ip = '127.0.0.1';
 
-      const request = {
-        headers: { 'user-agent': 'test-agent' },
-        ip: '127.0.0.1',
-      } as unknown as Request;
+      await controller.login(
+        loginDto,
+        mockRequest as unknown as Request,
+        mockResponse as unknown as Response,
+      );
 
-      const response = {
-        status: jest.fn().mockReturnThis(),
-        json: jest.fn(),
-      } as unknown as Response;
-
-      await controller.login(loginDto, request, response);
-
-      expect(response.status).toHaveBeenCalledWith(401);
-      expect(response.json).toHaveBeenCalledWith({
+      expect(mockResponse.status).toHaveBeenCalledWith(401);
+      expect(mockResponse.json).toHaveBeenCalledWith({
         message: AUTH_ERROR_MESSAGES.INVALID_CREDENTIALS,
       });
     });
