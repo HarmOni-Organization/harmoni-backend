@@ -20,6 +20,7 @@ import { MovieModule } from './movie/movie.module';
 import { AiModule } from './ai/ai.module';
 import { GlobalGateway } from './app.gateway';
 import { PromptModule } from './prompt/prompt.module';
+import { NotesModule } from './notes/notes.module';
 import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
@@ -57,6 +58,7 @@ import { ScheduleModule } from '@nestjs/schedule';
     AiModule, // Handles AI-powered features and recommendations
     PromptModule, // Manages user prompts (create, read, update, delete)
     SyncModule,
+    NotesModule, // Manages user notes with real-time sync capabilities
     ScheduleModule.forRoot(),
   ],
   controllers: [AppController],
