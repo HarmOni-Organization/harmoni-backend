@@ -136,4 +136,123 @@ describe('TmdbService', () => {
       await expect(service.getMovieById(movieId)).rejects.toThrow(error);
     });
   });
+
+  describe('searchMoviesByNames', () => {
+    it('should return movie data for all found movies', async () => {
+      const movieNames = ['Test Movie'];
+
+      // Mock search response
+      const mockSearchResponse = {
+        data: {
+          results: [
+            {
+              id: 123,
+              title: 'Test Movie',
+            },
+          ],
+        },
+      };
+
+      // Mock details response
+      const mockDetailsResponse = {
+        data: {
+          id: 123,
+          title: 'Test Movie',
+          release_date: '2023-01-01',
+          overview: 'Test Overview',
+          runtime: 120,
+          genres: [{ id: 1, name: 'Action' }],
+          popularity: 100,
+          poster_path: '/poster.jpg',
+          backdrop_path: '/backdrop.jpg',
+          vote_average: 8.5,
+          credits: {
+            cast: [
+              { name: 'Actor 1', character: 'Character 1' },
+              { name: 'Actor 2', character: 'Character 2' },
+            ],
+            crew: [
+              { name: 'Director', job: 'Director' },
+              { name: 'Writer', job: 'Writer' },
+            ],
+          },
+          keywords: {
+            keywords: [
+              { id: 1, name: 'Keyword 1' },
+              { id: 2, name: 'Keyword 2' },
+            ],
+          },
+        },
+      };
+
+      // Mock HTTP responses
+      httpService.get.mockImplementation((url) => {
+        if (url.includes('/search/movie')) {
+          return {
+            toPromise: jest.fn().mockResolvedValue(mockSearchResponse),
+          };
+        } else if (url.includes('/movie/123')) {
+          return {
+            toPromise: jest.fn().mockResolvedValue(mockDetailsResponse),
+          };
+        }
+        return {
+          toPromise: jest.fn().mockRejectedValue(new Error('Unknown URL')),
+        };
+      });
+
+      // Call the service method
+      const result = await service.searchMoviesByNames(movieNames);
+
+      // Verify the expected structure of the returned data
+      expect(result).toHaveLength(1);
+      expect(result[0]).toEqual(
+        expect.objectContaining({
+          id: 123,
+          title: 'Test Movie',
+          genres: ['Action'],
+          director: 'Director',
+          keywords: ['Keyword 1', 'Keyword 2'],
+        }),
+      );
+    });
+
+    it('should handle when no movies are found', async () => {
+      const movieNames = ['Nonexistent Movie'];
+
+      // Mock search response with no results
+      const mockSearchResponse = {
+        data: {
+          results: [],
+        },
+      };
+
+      // Mock HTTP response
+      httpService.get.mockReturnValue({
+        toPromise: jest.fn().mockResolvedValue(mockSearchResponse),
+      });
+
+      // Call the service method
+      const result = await service.searchMoviesByNames(movieNames);
+
+      // Should return an empty array
+      expect(result).toEqual([]);
+    });
+
+    it('should handle errors during search', async () => {
+      const movieNames = ['Error Movie'];
+      const error = new Error('API Error');
+
+      // Make the httpService.get method throw an error
+      httpService.get.mockReturnValue({
+        toPromise: jest.fn().mockRejectedValue(error),
+      });
+
+      // Call the service method
+      const result = await service.searchMoviesByNames(movieNames);
+
+      // Should return an empty array because it catches errors
+      expect(result).toEqual([]);
+    });
+  });
 });

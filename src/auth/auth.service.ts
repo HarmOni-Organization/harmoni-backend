@@ -10,6 +10,7 @@ import {
   InternalServerErrorException,
   UnauthorizedException,
   Logger,
+  BadRequestException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UserService } from '../user/user.service';
@@ -20,7 +21,10 @@ import {
   AUTH_ERROR_MESSAGES,
   AuthResponse,
   JwtPayload,
+  TokenType,
+  RefreshTokenResponse,
 } from './auth.types';
+import { RefreshTokenService } from './refresh-token.service';
 
 @Injectable()
 export class AuthService {
@@ -36,6 +40,7 @@ export class AuthService {
   constructor(
     private readonly jwtService: JwtService,
     private readonly userService: UserService,
+    private readonly refreshTokenService: RefreshTokenService,
   ) {}
 
   /**
@@ -65,9 +70,18 @@ export class AuthService {
       password: hashedPassword,
     });
 
+    const accessToken = this.generateToken(newUser, TokenType.ACCESS);
+    const refreshToken = this.generateToken(newUser, TokenType.REFRESH);
+
+    // Store refresh token in database
+    await this.refreshTokenService.createRefreshToken(
+      newUser.userId,
+      refreshToken,
+    );
+
     return {
-      accessToken: this.generateToken(newUser),
-      refreshToken: this.generateToken(newUser, true),
+      accessToken,
+      refreshToken,
       user: this.getPublicUser(newUser),
     };
   }
@@ -94,10 +108,20 @@ export class AuthService {
    * - Generates access and refresh tokens
    * - Returns user data and tokens
    */
-  login(user: any): AuthResponse {
+  async login(user: any, deviceInfo?: string): Promise<AuthResponse> {
+    const accessToken = this.generateToken(user, TokenType.ACCESS);
+    const refreshToken = this.generateToken(user, TokenType.REFRESH);
+
+    // Store refresh token in database
+    await this.refreshTokenService.createRefreshToken(
+      user.userId,
+      refreshToken,
+      deviceInfo,
+    );
+
     return {
-      accessToken: this.generateToken(user),
-      refreshToken: this.generateToken(user, true),
+      accessToken,
+      refreshToken,
       user: this.getPublicUser(user),
     };
   }
@@ -114,9 +138,16 @@ export class AuthService {
         HttpStatus.BAD_REQUEST,
       );
     }
+
     try {
-      await this.jwtService.verifyAsync(token);
+      // Verify the token first
+      const decoded = await this.jwtService.verifyAsync(token);
       this.invalidatedTokens.add(token);
+
+      // If it's a refresh token, also invalidate it in the database
+      if (decoded.type === TokenType.REFRESH) {
+        await this.refreshTokenService.revokeRefreshToken(token);
+      }
     } catch (err) {
       this.logger.error(`Token invalidation failed: ${err.message}`);
       throw new HttpException(
@@ -130,15 +161,39 @@ export class AuthService {
    * Token Validation
    * - Checks blacklist
    * - Verifies token signature
+   * - Verifies token type is appropriate for the operation
    */
-  async isTokenValid(token: string): Promise<boolean> {
+  async isTokenValid(
+    token: string,
+    expectedType?: TokenType,
+  ): Promise<boolean> {
     this.logger.debug('Checking token validity');
     if (this.invalidatedTokens.has(token)) {
       this.logger.warn('Token found in blacklist');
       return false;
     }
+
     try {
-      await this.jwtService.verifyAsync(token);
+      const decoded = await this.jwtService.verifyAsync(token);
+
+      // Check if token type matches expected type, if provided
+      if (expectedType && decoded.type !== expectedType) {
+        this.logger.warn(
+          `Token type mismatch: expected ${expectedType}, got ${decoded.type}`,
+        );
+        return false;
+      }
+
+      // If it's a refresh token, also check if it's valid in the database
+      if (decoded.type === TokenType.REFRESH) {
+        const isActive =
+          await this.refreshTokenService.isRefreshTokenActive(token);
+        if (!isActive) {
+          this.logger.warn('Refresh token is not active in database');
+          return false;
+        }
+      }
+
       this.logger.debug('Token signature verified successfully');
       return true;
     } catch (err) {
@@ -152,7 +207,10 @@ export class AuthService {
    * - Validates token and checks blacklist
    * - Retrieves and validates user
    */
-  async getUserFromToken(token: string): Promise<JwtPayload> {
+  async getUserFromToken(
+    token: string,
+    expectedType?: TokenType,
+  ): Promise<JwtPayload> {
     try {
       this.logger.debug('Getting user from token');
       if (!token) {
@@ -171,6 +229,26 @@ export class AuthService {
         `Token decoded successfully: ${JSON.stringify(decoded)}`,
       );
 
+      // Check token type if expected type is provided
+      if (expectedType && decoded.type !== expectedType) {
+        this.logger.warn(
+          `Token type mismatch: expected ${expectedType}, got ${decoded.type}`,
+        );
+        throw new UnauthorizedException(AUTH_ERROR_MESSAGES.INVALID_TOKEN_TYPE);
+      }
+
+      // If it's a refresh token, check if it's active in the database
+      if (decoded.type === TokenType.REFRESH) {
+        const isActive =
+          await this.refreshTokenService.isRefreshTokenActive(token);
+        if (!isActive) {
+          this.logger.warn('Refresh token is not active');
+          throw new UnauthorizedException(
+            AUTH_ERROR_MESSAGES.REFRESH_TOKEN_REVOKED,
+          );
+        }
+      }
+
       const user = await this.userService.findOneById(decoded.userId);
       this.logger.debug(`User lookup result: ${user ? 'Found' : 'Not found'}`);
 
@@ -180,19 +258,21 @@ export class AuthService {
         throw new UnauthorizedException(AUTH_ERROR_MESSAGES.USER_NOT_FOUND);
       }
 
-      const result = {
+      return {
         userId: user.userId,
         username: user.username,
         email: user.email,
         createdAt: user.createdAt,
+        type: decoded.type,
       };
-      this.logger.debug(`Returning user data: ${JSON.stringify(result)}`);
-      return result;
     } catch (err) {
       this.logger.error(
         `Error getting user from token: ${err.message}`,
         err.stack,
       );
+      if (err instanceof UnauthorizedException) {
+        throw err;
+      }
       throw new UnauthorizedException(AUTH_ERROR_MESSAGES.TOKEN_INVALID);
     }
   }
@@ -200,45 +280,94 @@ export class AuthService {
   /**
    * Token Refresh
    * - Validates refresh token
-   * - Generates new access token
+   * - Generates new access token and refresh token
+   * - Revokes the old refresh token
    */
-  async refreshAccessToken(refreshToken: string): Promise<string> {
+  async refreshTokens(
+    refreshToken: string,
+    deviceInfo?: string,
+  ): Promise<RefreshTokenResponse> {
     try {
-      if (!refreshToken)
-        throw new UnauthorizedException(AUTH_ERROR_MESSAGES.TOKEN_MISSING);
+      if (!refreshToken) {
+        throw new BadRequestException(
+          AUTH_ERROR_MESSAGES.REFRESH_TOKEN_REQUIRED,
+        );
+      }
 
-      // Verify refresh token validity
-      const decoded = await this.jwtService.verifyAsync(refreshToken);
+      // Verify refresh token is of correct type and valid
+      const isValid = await this.isTokenValid(refreshToken, TokenType.REFRESH);
+      if (!isValid) {
+        throw new UnauthorizedException(
+          AUTH_ERROR_MESSAGES.REFRESH_TOKEN_INVALID,
+        );
+      }
+
+      // Get user from token
+      const decoded = await this.getUserFromToken(
+        refreshToken,
+        TokenType.REFRESH,
+      );
 
       // Fetch user using decoded data
       const user = await this.userService.findOneById(decoded.userId);
-
-      if (!user)
+      if (!user) {
         throw new UnauthorizedException(AUTH_ERROR_MESSAGES.USER_NOT_FOUND);
+      }
 
-      return this.generateToken(user);
+      // Generate new tokens
+      const newAccessToken = this.generateToken(user, TokenType.ACCESS);
+      const newRefreshToken = this.generateToken(user, TokenType.REFRESH);
+
+      // Store new refresh token and revoke old one
+      await this.refreshTokenService.createRefreshToken(
+        user.userId,
+        newRefreshToken,
+        deviceInfo,
+      );
+      await this.refreshTokenService.revokeRefreshToken(
+        refreshToken,
+        newRefreshToken,
+      );
+
+      return {
+        accessToken: newAccessToken,
+        refreshToken: newRefreshToken,
+      };
     } catch (err) {
       this.logger.error(`Token refresh failed: ${err.message}`);
-      throw new UnauthorizedException(AUTH_ERROR_MESSAGES.TOKEN_INVALID);
+      if (
+        err instanceof UnauthorizedException ||
+        err instanceof BadRequestException
+      ) {
+        throw err;
+      }
+      throw new UnauthorizedException(
+        AUTH_ERROR_MESSAGES.REFRESH_TOKEN_INVALID,
+      );
     }
   }
 
   /**
    * JWT Token Generation
-   * - Creates payload with user data
+   * - Creates payload with user data and token type
    * - Signs token with configured expiry
    */
-  private generateToken(user: any, isRefreshToken = false): string {
+  private generateToken(user: any, type: TokenType): string {
     try {
       const payload: JwtPayload = {
         userId: user.userId,
         email: user.email,
         username: user.username,
         createdAt: user.createdAt,
+        type,
       };
-      return this.jwtService.sign(payload, {
-        expiresIn: isRefreshToken ? '7d' : AUTH_CONSTANTS.TOKEN_EXPIRY,
-      });
+
+      const expiresIn =
+        type === TokenType.ACCESS
+          ? AUTH_CONSTANTS.ACCESS_TOKEN_EXPIRY
+          : AUTH_CONSTANTS.REFRESH_TOKEN_EXPIRY;
+
+      return this.jwtService.sign(payload, { expiresIn });
     } catch (err) {
       this.logger.error(`Token generation failed: ${err.message}`);
       throw new InternalServerErrorException('Failed to generate token');
@@ -248,7 +377,6 @@ export class AuthService {
   /**
    * Public User Data
    * - Removes sensitive information
-   * - Returns sanitized user object
    */
   private getPublicUser(user: any): AuthResponse['user'] {
     return {
@@ -260,32 +388,18 @@ export class AuthService {
   }
 
   /**
-   * Username Validation
-   * - Checks if username is available
+   * Username Uniqueness Check
    */
   async isUsernameUnique(username: string): Promise<boolean> {
-    try {
-      const user = await this.userService.findOneByUsername(username);
-      return !user;
-    } catch (err) {
-      this.logger.error(`Error checking username uniqueness: ${err.message}`);
-      throw new InternalServerErrorException(
-        'Error checking username uniqueness',
-      );
-    }
+    const user = await this.userService.findOneByUsername(username);
+    return !user;
   }
 
   /**
-   * Email Validation
-   * - Checks if email is available
+   * Email Uniqueness Check
    */
   async isEmailUnique(email: string): Promise<boolean> {
-    try {
-      const user = await this.userService.findOneByEmail(email);
-      return !user;
-    } catch (err) {
-      this.logger.error(`Error checking email uniqueness: ${err.message}`);
-      throw new InternalServerErrorException('Error checking email uniqueness');
-    }
+    const user = await this.userService.findOneByEmail(email);
+    return !user;
   }
 }

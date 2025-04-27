@@ -40,7 +40,7 @@ export class RecommendationController {
   @Get('genre')
   async getGenreRecommendations(@Query() query: GenreRecommendationDto) {
     try {
-      const { genre, topN = 30 } = query;
+      const { genre, topN = 10 } = query;
 
       const response = await firstValueFrom(
         this.httpService
