@@ -7,6 +7,7 @@ import {
   Logger,
   BadRequestException,
   InternalServerErrorException,
+  BadRequestException,
 } from '@nestjs/common';
 import { AnimeService } from './anime.service';
 import { GetSeriesDto } from './dto/series.dto';
