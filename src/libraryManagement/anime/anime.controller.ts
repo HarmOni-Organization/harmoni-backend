@@ -5,6 +5,7 @@ import {
   Query,
   NotFoundException,
   Logger,
+  BadRequestException,
 } from '@nestjs/common';
 import { AnimeService } from './anime.service';
 import { GetSeriesDto } from './dto/series.dto';
@@ -22,6 +23,62 @@ export class AnimeController {
   private readonly logger = new Logger(AnimeController.name);
 
   constructor(private readonly animeService: AnimeService) {}
+
+  @Get('search')
+  @ApiOperation({
+    summary: 'Search for anime by name with optional season number',
+  })
+  @ApiQuery({
+    name: 'name',
+    required: true,
+    type: String,
+    description:
+      'Anime name to search for. Can include season suffix like "S2" or "season 3"',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns the most relevant match with detailed information',
+    schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Anime ID' },
+        seriesId: { type: 'string', description: 'Series ID (if available)' },
+        title: { type: 'string', description: 'Anime title' },
+        episodes: {
+          type: 'number',
+          description: 'Number of episodes (if available)',
+        },
+        format: {
+          type: 'string',
+          description: 'Anime format (TV, Movie, OVA, etc.)',
+        },
+      },
+      required: ['id', 'title'],
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'No matches found for the search query',
+  })
+  async searchAnime(@Query('name') name: string): Promise<{
+    id: string;
+    seriesId?: string;
+    title: string;
+    episodes?: number;
+    format?: string;
+  }> {
+    try {
+      if (!name || name.trim() === '') {
+        throw new BadRequestException('Search query is required');
+      }
+      return this.animeService.searchAnime(name);
+    } catch (error) {
+      this.logger.error(
+        `Error searching anime with query "${name}": ${error.message}`,
+      );
+      throw error;
+    }
+  }
 
   @Get('series/:id')
   @ApiOperation({
@@ -100,5 +157,18 @@ export class AnimeController {
       this.logger.error(`Error fetching multiple anime: ${error.message}`);
       throw error;
     }
+  }
+
+  @Get('admin/clear-cache')
+  @ApiOperation({
+    summary: 'Clear the anime service cache (for testing purposes)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Cache cleared successfully',
+  })
+  clearCache() {
+    this.animeService.clearCache();
+    return { message: 'Cache cleared successfully' };
   }
 }
