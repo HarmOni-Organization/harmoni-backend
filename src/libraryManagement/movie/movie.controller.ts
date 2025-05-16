@@ -11,12 +11,12 @@ import {
   Param,
   NotFoundException,
 } from '@nestjs/common';
-import { AiService } from 'src/ai/ai.service';
-import { TmdbService } from 'src/common/services/tmdb.service';
+import { AiService } from '../../ai/ai.service';
+import { TmdbService } from '../../common/services/tmdb.service';
 import { SearchMovieDto, TreeInputDto } from './dto/search-movie.dto';
 import { MovieIdDto } from './dto/movie-id.dto';
 
-@Controller('movies')
+@Controller('library/movies')
 export class MovieController {
   constructor(
     private readonly tmdbService: TmdbService,

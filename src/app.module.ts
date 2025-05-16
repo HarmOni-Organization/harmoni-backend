@@ -16,11 +16,11 @@ import { JwtService } from '@nestjs/jwt';
 import { AuthMiddleware } from './middlewares/auth.middleware';
 import { SyncModule } from './sync/sync.module';
 import { CommonModule } from './common/common.module';
-import { MovieModule } from './movie/movie.module';
 import { AiModule } from './ai/ai.module';
 import { GlobalGateway } from './app.gateway';
 import { PromptModule } from './prompt/prompt.module';
 import { NotesModule } from './notes/notes.module';
+import { LibraryManagementModule } from './libraryManagement';
 
 @Module({
   imports: [
@@ -47,17 +47,27 @@ import { NotesModule } from './notes/notes.module';
         useUnifiedTopology: true, // Handles reconnection logic internally
       }),
     }),
+    MongooseModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        uri: configService.get<string>('ANIME_DB_URL'),
+        // useNewUrlParser: true, // Ensures compatibility with new connection strings
+        // useUnifiedTopology: true, // Handles reconnection logic internally
+      }),
+      connectionName: 'animeDB', // <-- this is a NestJS-level option, valid here
+    }),
 
     // Feature Modules
     UserModule, // Handles user management and profiles
     SyncModule, // Manages data synchronization operations
     AuthModule, // Handles authentication and authorization
     CommonModule, // Contains shared utilities and common functionality
-    MovieModule, // Manages movie-related operations and data
     AiModule, // Handles AI-powered features and recommendations
     PromptModule, // Manages user prompts (create, read, update, delete)
     SyncModule,
     NotesModule, // Manages user notes with real-time sync capabilities
+    LibraryManagementModule, // Manages library content (movies, anime)
   ],
   controllers: [AppController],
   providers: [GlobalGateway, AppService, JwtService],
