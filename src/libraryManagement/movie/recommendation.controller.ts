@@ -22,7 +22,7 @@ interface RequestWithUser extends Request {
   user: any;
 }
 
-@Controller('recommendations')
+@Controller('library/recommendations')
 export class RecommendationController {
   private readonly RECOMMENDATION_API_URL: string;
   private readonly logger = new Logger(RecommendationController.name);

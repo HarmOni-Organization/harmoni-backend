@@ -34,7 +34,7 @@ export interface TokenValidationResponse {
 
 // Constants
 export const AUTH_CONSTANTS = {
-  TOKEN_EXPIRY: '1h',
+  TOKEN_EXPIRY: '12h',
   PASSWORD_SALT_ROUNDS: 10,
   TOKEN_BLACKLIST_TTL: 24 * 60 * 60 * 1000, // 24 hours
 } as const;

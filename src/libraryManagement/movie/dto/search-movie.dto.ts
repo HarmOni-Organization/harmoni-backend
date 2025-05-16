@@ -1,13 +1,14 @@
-import { IsArray, IsString, ArrayNotEmpty } from 'class-validator';
+import { IsArray, IsString, IsOptional } from 'class-validator';
 
 export class SearchMovieDto {
   @IsArray()
-  @ArrayNotEmpty()
   @IsString({ each: true })
+  @IsOptional()
   names: string[];
 }
 
 export class TreeInputDto {
   @IsString()
-  tree: string = '';
+  @IsOptional()
+  tree?: string;
 }
