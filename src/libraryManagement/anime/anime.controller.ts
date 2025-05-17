@@ -200,4 +200,22 @@ export class AnimeController {
     this.animeService.clearCache();
     return { message: 'Cache cleared successfully' };
   }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Get an anime by ID' })
+  @ApiParam({ name: 'id', description: 'Anime ID' })
+  @ApiResponse({ status: 200, description: 'Anime successfully retrieved' })
+  @ApiResponse({ status: 404, description: 'Anime not found' })
+  async getAnimeById(@Param('id') id: string) {
+    try {
+      const anime = await this.animeService.getAnimeById(id);
+      if (!anime) {
+        throw new NotFoundException(`Anime with ID ${id} not found`);
+      }
+      return anime;
+    } catch (error) {
+      this.logger.error(`Error fetching anime with ID ${id}: ${error.message}`);
+      throw error;
+    }
+  }
 }
