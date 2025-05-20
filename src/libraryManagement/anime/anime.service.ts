@@ -8,8 +8,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { IAnime } from '../../schemas/animeDB/anime.schema';
 import { ISeries } from '../../schemas/animeDB/series.schema';
-import { AnimeData, SeriesChain, SeriesResponse } from './dto/series.dto';
-import { object } from 'zod';
+import { SeriesChain, SeriesResponse } from './dto/series.dto';
 
 @Injectable()
 export class AnimeService {
@@ -142,6 +141,14 @@ export class AnimeService {
   async getSeriesById(id: string): Promise<SeriesResponse> {
     this.logger.log(`Getting enhanced series data for ID: ${id}`);
 
+    // Check cache first
+    const cacheKey = `series_${id}`;
+    const cached = this.getFromCache(cacheKey);
+    if (cached) {
+      this.logger.debug(`Using cached data for series ${id}`);
+      return cached;
+    }
+
     // Fetch series by ID
     const series = await this.seriesModel.findOne({ seriesId: id }).exec();
 
@@ -149,20 +156,20 @@ export class AnimeService {
       throw new NotFoundException(`Series with ID ${id} not found`);
     }
 
-    // Fetch full anime metadata for each ID in the animeIds array
-    // make it get only deeded document fields
+    // Get all unique IDs to fetch
+    const allAnimeIds = [
+      ...new Set([
+        ...series.animeIds,
+        ...series.spinOffIds,
+        ...series.adaptationIds,
+        ...series.characterIds,
+        ...series.otherIds,
+      ]),
+    ];
+
+    // Fetch full anime metadata for all IDs
     const animeData = await this.animeModel
-      .find({
-        id: {
-          $in: [
-            ...series.animeIds,
-            ...series.spinOffIds,
-            ...series.adaptationIds,
-            ...series.characterIds,
-            ...series.spinOffIds,
-          ],
-        },
-      })
+      .find({ id: { $in: allAnimeIds } })
       .select({
         id: 1,
         title: 1,
@@ -225,13 +232,84 @@ export class AnimeService {
       }
     });
 
-    // Build directed graph from relations array, keeping only PREQUEL relations with direction="forward"
+    // Build directed graph from relations array, keeping only SEQUEL relations
+    const preqGraph = this.buildRelationGraph(series.relations, validAnimeIds);
+
+    // Find root nodes and build chains
+    const chains = this.buildAnimeChains(series, preqGraph, validAnimeIds);
+
+    if (chains.length === 0) {
+      this.logger.warn(
+        'No valid chains could be constructed, creating single-anime chains',
+      );
+
+      // If no chains were created, make simple one-anime chains for valid IDs
+      series.animeIds
+        .filter((id) => validAnimeIds.has(id))
+        .forEach((id) => {
+          chains.push([id]);
+        });
+
+      if (chains.length === 0) {
+        throw new InternalServerErrorException(
+          'No valid anime data found for this series',
+        );
+      }
+    }
+
+    // Determine main and sub series
+    const { mainSeries, subSeries } = this.determineMainAndSubSeries(
+      chains,
+      animeMap,
+      series,
+    );
+
+    // Build final response
+    const response: SeriesResponse = {
+      seriesId: series.seriesId,
+      mainSeries,
+      subSeries,
+      otherIds: series.otherIds.map((id) => animeMap[id]).filter(Boolean),
+      characterIds: series.characterIds
+        .map((id) => animeMap[id])
+        .filter(Boolean),
+      adaptationIds: series.adaptationIds
+        .map((id) => animeMap[id])
+        .filter(Boolean),
+      spinOffIds: series.spinOffIds.map((id) => animeMap[id]).filter(Boolean),
+      relations: series.relations,
+      manuallyModified: series.manuallyModified,
+      updatedAt: series.updatedAt,
+      lastAutomatedUpdate: series.lastAutomatedUpdate,
+    };
+
+    // Cache the result
+    this.setInCache(cacheKey, response);
+
+    return response;
+  }
+
+  /**
+   * Build directed graph from series relations
+   * @param relations Array of relations from series
+   * @param validAnimeIds Set of valid anime IDs
+   * @returns Map representing the directed graph
+   */
+  private buildRelationGraph(
+    relations: Array<{
+      sourceAnimeId: string;
+      targetAnimeId: string;
+      relationType: string;
+      direction: string;
+    }>,
+    validAnimeIds: Set<string>,
+  ): Map<string, string[]> {
     const preqGraph = new Map<string, string[]>();
-    const filteredRelations = series.relations.filter(
+    const filteredRelations = relations.filter(
       (r) => r.relationType === 'SEQUEL',
     );
 
-    // Remove duplicates from relations and ensure both source and target exist in our data
+    // Remove duplicates from relations and ensure both source and target exist
     const uniqueRelations = filteredRelations.filter(
       (rel, index, self) =>
         index ===
@@ -246,7 +324,9 @@ export class AnimeService {
 
     if (uniqueRelations.length < filteredRelations.length) {
       this.logger.warn(
-        `Removed ${filteredRelations.length - uniqueRelations.length} relations with missing anime data`,
+        `Removed ${
+          filteredRelations.length - uniqueRelations.length
+        } relations with missing anime data`,
       );
     }
 
@@ -258,19 +338,35 @@ export class AnimeService {
       preqGraph.get(rel.sourceAnimeId)!.push(rel.targetAnimeId);
     });
 
-    // We need to identify "root" nodes first (those that aren't sequels to anything)
-    // and build chains starting from those roots
+    return preqGraph;
+  }
+
+  /**
+   * Build anime chains from series data and relation graph
+   * @param series The series document
+   * @param preqGraph The directed relation graph
+   * @param validAnimeIds Set of valid anime IDs
+   * @returns Array of anime chains (arrays of anime IDs)
+   */
+  private buildAnimeChains(
+    series: ISeries,
+    preqGraph: Map<string, string[]>,
+    validAnimeIds: Set<string>,
+  ): string[][] {
+    // Find root nodes (those with no incoming edges)
     const incomingEdges = new Map<string, string[]>();
 
     // Populate incoming edges map
-    uniqueRelations.forEach((rel) => {
-      if (!incomingEdges.has(rel.targetAnimeId)) {
-        incomingEdges.set(rel.targetAnimeId, []);
+    for (const [source, targets] of preqGraph.entries()) {
+      for (const target of targets) {
+        if (!incomingEdges.has(target)) {
+          incomingEdges.set(target, []);
+        }
+        incomingEdges.get(target)!.push(source);
       }
-      incomingEdges.get(rel.targetAnimeId)!.push(rel.sourceAnimeId);
-    });
+    }
 
-    // Find root nodes (those with no incoming edges)
+    // Root nodes are those with no incoming edges
     const rootNodes: string[] = [];
     series.animeIds
       .filter((id) => validAnimeIds.has(id))
@@ -313,10 +409,11 @@ export class AnimeService {
               branchVisited.add(nextId);
 
               // Start a new chain from the current branch point
-              const branchChains = buildChainBranch(
+              const branchChains = this.buildChainBranch(
                 nextId,
                 [...newChain],
                 branchVisited,
+                preqGraph,
               );
               allChains.push(...branchChains);
             } else {
@@ -331,58 +428,6 @@ export class AnimeService {
           const nextId = nextNodes[0];
           if (!visited.has(nextId)) {
             return buildChain(nextId, newChain);
-          }
-        }
-      }
-
-      // End of chain
-      return [newChain];
-    };
-
-    // Helper function to build a chain branch after the point where multiple paths split
-    const buildChainBranch = (
-      currentId: string,
-      chain: string[],
-      branchVisited: Set<string>,
-    ): string[][] => {
-      const newChain = [...chain, currentId];
-
-      // If this node has outgoing edges, follow them
-      if (preqGraph.has(currentId) && preqGraph.get(currentId)!.length > 0) {
-        const nextNodes = preqGraph.get(currentId)!;
-
-        // If there are multiple next nodes, create more branching chains
-        if (nextNodes.length > 1) {
-          const allChains: string[][] = [];
-
-          // For each next node, create a separate chain branch
-          for (const nextId of nextNodes) {
-            if (!branchVisited.has(nextId)) {
-              // Create a temporary visited set for this new branch
-              const newBranchVisited = new Set(branchVisited);
-              newBranchVisited.add(nextId);
-
-              // Start a new chain from this branch point
-              const branchChains = buildChainBranch(
-                nextId,
-                [...newChain],
-                newBranchVisited,
-              );
-              allChains.push(...branchChains);
-            } else {
-              // If already visited, just add the current chain
-              allChains.push(newChain);
-            }
-          }
-
-          return allChains;
-        } else {
-          // Single next node case
-          const nextId = nextNodes[0];
-          if (!branchVisited.has(nextId)) {
-            // Mark as visited for this branch
-            branchVisited.add(nextId);
-            return buildChainBranch(nextId, newChain, branchVisited);
           }
         }
       }
@@ -412,7 +457,82 @@ export class AnimeService {
         });
     }
 
-    // Filter out redundant sub-chains that are completely contained in other chains
+    // Filter out redundant sub-chains
+    return this.filterRedundantChains(chains);
+  }
+
+  /**
+   * Helper function to build a chain branch after the point where multiple paths split
+   * @param currentId Current anime ID
+   * @param chain Current chain so far
+   * @param branchVisited Set of visited nodes for this branch
+   * @param preqGraph The directed graph of relations
+   * @returns Array of chains from this branch
+   */
+  private buildChainBranch(
+    currentId: string,
+    chain: string[],
+    branchVisited: Set<string>,
+    preqGraph: Map<string, string[]>,
+  ): string[][] {
+    const newChain = [...chain, currentId];
+
+    // If this node has outgoing edges, follow them
+    if (preqGraph.has(currentId) && preqGraph.get(currentId)!.length > 0) {
+      const nextNodes = preqGraph.get(currentId)!;
+
+      // If there are multiple next nodes, create more branching chains
+      if (nextNodes.length > 1) {
+        const allChains: string[][] = [];
+
+        // For each next node, create a separate chain branch
+        for (const nextId of nextNodes) {
+          if (!branchVisited.has(nextId)) {
+            // Create a temporary visited set for this new branch
+            const newBranchVisited = new Set(branchVisited);
+            newBranchVisited.add(nextId);
+
+            // Start a new chain from this branch point
+            const branchChains = this.buildChainBranch(
+              nextId,
+              [...newChain],
+              newBranchVisited,
+              preqGraph,
+            );
+            allChains.push(...branchChains);
+          } else {
+            // If already visited, just add the current chain
+            allChains.push(newChain);
+          }
+        }
+
+        return allChains;
+      } else {
+        // Single next node case
+        const nextId = nextNodes[0];
+        if (!branchVisited.has(nextId)) {
+          // Mark as visited for this branch
+          branchVisited.add(nextId);
+          return this.buildChainBranch(
+            nextId,
+            newChain,
+            branchVisited,
+            preqGraph,
+          );
+        }
+      }
+    }
+
+    // End of chain
+    return [newChain];
+  }
+
+  /**
+   * Filter out redundant sub-chains that are completely contained in other chains
+   * @param chains Array of chains to filter
+   * @returns Filtered array of chains
+   */
+  private filterRedundantChains(chains: string[][]): string[][] {
     const filteredChains: string[][] = [];
     const chainStrings = chains.map((chain) => chain.join(','));
 
@@ -458,41 +578,92 @@ export class AnimeService {
       }
     });
 
-    // Replace original chains with the filtered ones
-    chains.length = 0;
-    chains.push(...filteredChains);
+    return filteredChains;
+  }
 
-    if (chains.length === 0) {
-      this.logger.warn(
-        'No valid chains could be constructed, creating single-anime chains',
-      );
-
-      // If no chains were created, make simple one-anime chains for valid IDs
-      series.animeIds
-        .filter((id) => validAnimeIds.has(id))
-        .forEach((id) => {
-          chains.push([id]);
-        });
-
-      if (chains.length === 0) {
-        throw new InternalServerErrorException(
-          'No valid anime data found for this series',
-        );
-      }
-    }
-
+  /**
+   * Determine main and sub series from chains
+   * @param chains Array of anime chains
+   * @param animeMap Map of anime data by ID
+   * @param series The series document
+   * @returns Object containing mainSeries and subSeries
+   */
+  private determineMainAndSubSeries(
+    chains: string[][],
+    animeMap: { [key: string]: any },
+    series: ISeries,
+  ): { mainSeries: SeriesChain; subSeries: SeriesChain[] } {
     // Filter chains for main series candidates (first anime has type="ANIME")
     const mainCandidates = chains.filter((chain) => {
       const firstAnime = animeMap[chain[0]];
       return firstAnime && firstAnime.type === 'ANIME';
     });
 
-    if (mainCandidates.length === 0) {
+    if (mainCandidates.length === 0 && chains.length > 0) {
       // If no main candidates, just use the first chain
       mainCandidates.push(chains[0]);
     }
 
-    // Compare effective dates to find the earliest
+    // Find the earliest chain to be the main series
+    let mainIdx = this.findEarliestChain(mainCandidates, animeMap);
+
+    // Fallback if no chain is found
+    if (mainIdx === -1 && mainCandidates.length > 0) {
+      mainIdx = 0;
+      this.logger.warn(
+        `Using first chain as fallback main series: ${mainCandidates[0][0]}`,
+      );
+    }
+
+    // Format main series
+    const mainChain = mainCandidates[mainIdx];
+    const firstMainId = mainChain[0];
+
+    // Ensure we have data for all anime in the main chain
+    const validAnimeIds = new Set(Object.keys(animeMap));
+    const mainAnimeData = mainChain
+      .filter((id) => validAnimeIds.has(id))
+      .map((id) => animeMap[id]);
+
+    // If main chain has no valid anime data, throw error
+    if (mainAnimeData.length === 0) {
+      throw new InternalServerErrorException(
+        'Main series chain contains no valid anime data',
+      );
+    }
+
+    // Use the first anime's title that we have data for
+    const mainTitle = mainAnimeData[0].title?.userPreferred || 'Unknown';
+
+    const mainSeries: SeriesChain = {
+      title: mainTitle + ' series',
+      anime: mainAnimeData,
+      count: mainAnimeData.length,
+    };
+
+    // Format sub series
+    const subSeries = this.formatSubSeries(
+      chains,
+      mainCandidates[mainIdx],
+      firstMainId,
+      animeMap,
+      validAnimeIds,
+      series,
+    );
+
+    return { mainSeries, subSeries };
+  }
+
+  /**
+   * Find the earliest chain based on effective dates
+   * @param mainCandidates Candidate chains for main series
+   * @param animeMap Map of anime data by ID
+   * @returns Index of the earliest chain
+   */
+  private findEarliestChain(
+    mainCandidates: string[][],
+    animeMap: { [key: string]: any },
+  ): number {
     let mainIdx = -1;
     let earliestDate: Date | null = null;
     const tiedCandidates: string[] = [];
@@ -560,71 +731,43 @@ export class AnimeService {
           );
         }
       }
-
-      // If still no valid date, use simpler fallback methods
-      if (mainIdx === -1) {
-        // Option 1: If we still have multiple candidates, pick the first one
-        if (mainCandidates.length > 0) {
-          mainIdx = 0;
-          this.logger.warn(
-            `Using first chain as fallback main series: ${mainCandidates[0][0]}`,
-          );
-        }
-        // Option 2: If no type="ANIME" chains were found, use the first chain from all chains
-        else if (chains.length > 0) {
-          mainCandidates.push(chains[0]);
-          mainIdx = 0;
-          this.logger.warn(
-            `Using very first chain as fallback main series: ${chains[0][0]}`,
-          );
-        }
-        // Option 3: If we have no chains at all, we truly have a problem
-        else {
-          throw new InternalServerErrorException(
-            'No valid chains found in series data',
-          );
-        }
-      }
     }
 
     if (tiedCandidates.length > 1) {
-      // Relaxing this constraint - just pick the first tied candidate instead of throwing an error
+      // Relaxing this constraint - just pick the first tied candidate
       this.logger.warn(
-        `Multiple main-series candidates found, using first one: ${tiedCandidates[0]} (tied with: ${tiedCandidates.slice(1).join(', ')})`,
+        `Multiple main-series candidates found, using first one: ${tiedCandidates[0]} (tied with: ${tiedCandidates
+          .slice(1)
+          .join(', ')})`,
       );
       // Find which mainCandidate index corresponds to our selected tiedCandidate
       const selectedId = tiedCandidates[0];
       mainIdx = mainCandidates.findIndex((chain) => chain[0] === selectedId);
     }
 
-    // Format main series
-    const mainChain = mainCandidates[mainIdx];
-    const firstMainId = mainChain[0];
+    return mainIdx;
+  }
 
-    // Ensure we have data for all anime in the main chain
-    const mainAnimeData = mainChain
-      .filter((id) => validAnimeIds.has(id))
-      .map((id) => animeMap[id]);
-
-    // If main chain has no valid anime data, throw error
-    if (mainAnimeData.length === 0) {
-      throw new InternalServerErrorException(
-        'Main series chain contains no valid anime data',
-      );
-    }
-
-    // Use the first anime's title that we have data for
-    const mainTitle = mainAnimeData[0].title?.userPreferred || 'Unknown';
-
-    const mainSeries: SeriesChain = {
-      title: mainTitle + ' series',
-      anime: mainAnimeData,
-      count: mainAnimeData.length,
-    };
-
-    // Format sub series
-    const subSeries: SeriesChain[] = chains
-      .filter((_, idx) => mainCandidates[mainIdx] !== chains[idx]) // Exclude main series
+  /**
+   * Format sub-series data
+   * @param chains All chains
+   * @param mainChain The main chain
+   * @param firstMainId ID of the first anime in main chain
+   * @param animeMap Map of anime data by ID
+   * @param validAnimeIds Set of valid anime IDs
+   * @param series The series document
+   * @returns Array of SeriesChain objects for sub-series
+   */
+  private formatSubSeries(
+    chains: string[][],
+    mainChain: string[],
+    firstMainId: string,
+    animeMap: { [key: string]: any },
+    validAnimeIds: Set<string>,
+    series: ISeries,
+  ): SeriesChain[] {
+    return chains
+      .filter((chain) => chain !== mainChain) // Exclude main series
       .map((chain) => {
         // Filter to only include anime with data
         const validChain = chain.filter((id) => validAnimeIds.has(id));
@@ -670,27 +813,6 @@ export class AnimeService {
         };
       })
       .filter((series) => series !== null) as SeriesChain[];
-
-    // Build final response
-    const response: SeriesResponse = {
-      seriesId: series.seriesId,
-      mainSeries,
-      subSeries,
-      otherIds: series.otherIds.map((id) => animeMap[id]).filter(Boolean),
-      characterIds: series.characterIds
-        .map((id) => animeMap[id])
-        .filter(Boolean),
-      adaptationIds: series.adaptationIds
-        .map((id) => animeMap[id])
-        .filter(Boolean),
-      spinOffIds: series.spinOffIds.map((id) => animeMap[id]).filter(Boolean),
-      relations: series.relations,
-      manuallyModified: series.manuallyModified,
-      updatedAt: series.updatedAt,
-      lastAutomatedUpdate: series.lastAutomatedUpdate,
-    };
-
-    return response;
   }
 
   /**

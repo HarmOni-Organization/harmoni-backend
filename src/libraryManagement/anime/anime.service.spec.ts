@@ -176,16 +176,16 @@ describe('AnimeService', () => {
         seriesId: 'series1',
       });
 
-      // Verify anime data lookup with all IDs
+      // Verify anime data lookup with all IDs (using a Set for unique IDs)
       expect(animeModel.find).toHaveBeenCalledWith({
         id: {
-          $in: [
+          $in: expect.arrayContaining([
             ...mockSeriesData.animeIds,
             ...mockSeriesData.spinOffIds,
             ...mockSeriesData.adaptationIds,
             ...mockSeriesData.characterIds,
-            ...mockSeriesData.spinOffIds,
-          ],
+            ...mockSeriesData.otherIds,
+          ]),
         },
       });
 
