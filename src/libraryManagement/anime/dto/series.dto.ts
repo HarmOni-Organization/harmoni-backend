@@ -100,10 +100,10 @@ export interface SeriesChain {
 // Interface definition for the response
 export interface SeriesResponse {
   seriesId: string;
-  otherIds: string[];
-  characterIds: string[];
-  adaptationIds: string[];
-  spinOffIds: string[];
+  otherIds: AnimeData[];
+  characterIds: AnimeData[];
+  adaptationIds: AnimeData[];
+  spinOffIds: AnimeData[];
   relations: IRelation[];
   updatedAt: Date;
   lastAutomatedUpdate: Date;
