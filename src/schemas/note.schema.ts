@@ -38,4 +38,4 @@ export const NoteSchema = SchemaFactory.createForClass(Note);
 // Add indexes for performance
 NoteSchema.index({ userId: 1, isPinned: -1, createdAt: -1 });
 NoteSchema.index({ userId: 1, tags: 1 });
-NoteSchema.index({ userId: 1, context: 1 }); 
+NoteSchema.index({ userId: 1, context: 1 });

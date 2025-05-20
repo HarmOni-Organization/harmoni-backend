@@ -36,23 +36,26 @@ export class UserService {
       newUser.userId = `${newUser._id}`;
       return await newUser.save();
     } catch (error) {
-      console.error("User Creation Error:", error.message, { details: error });
-      throw new HttpException('Failed to create user', HttpStatus.INTERNAL_SERVER_ERROR);
+      console.error('User Creation Error:', error.message, { details: error });
+      throw new HttpException(
+        'Failed to create user',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 
-    /**
+  /**
    * Finds a user by email or username.
    * @param emailOrUsername - The email or username to search for.
    * @returns User document or null if not found.
    */
-    async findByEmailOrUsername(emailOrUsername: string): Promise<User | null> {
-      return this.userModel
-        .findOne({
-          $or: [{ email: emailOrUsername }, { username: emailOrUsername }],
-        })
-        .exec();
-    }
+  async findByEmailOrUsername(emailOrUsername: string): Promise<User | null> {
+    return this.userModel
+      .findOne({
+        $or: [{ email: emailOrUsername }, { username: emailOrUsername }],
+      })
+      .exec();
+  }
 
   async findOneById(id: string): Promise<User | null> {
     return this.userModel.findById(id).exec();

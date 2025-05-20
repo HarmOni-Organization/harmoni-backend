@@ -5,6 +5,7 @@ import {
   Query,
   NotFoundException,
   Logger,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { AnimeService } from './anime.service';
 import { GetSeriesDto } from './dto/series.dto';
@@ -25,7 +26,46 @@ export class AnimeController {
 
   @Get('series/:id')
   @ApiOperation({
-    summary: 'Get a series by ID with optional detailed anime information',
+    summary:
+      'Get a series by ID with enhanced metadata and series organization',
+  })
+  @ApiParam({ name: 'id', description: 'Series ID' })
+  @ApiResponse({ status: 200, description: 'Series successfully retrieved' })
+  @ApiResponse({ status: 404, description: 'Series not found' })
+  @ApiResponse({
+    status: 500,
+    description:
+      'Internal server error. May occur with missing date info or multiple main-series candidates',
+  })
+  async getSeriesById(@Param('id') id: string) {
+    try {
+      const series = await this.animeService.getSeriesById(id);
+      if (!series) {
+        throw new NotFoundException(`Series with ID ${id} not found`);
+      }
+      return series;
+    } catch (error) {
+      this.logger.error(
+        `Error fetching series with ID ${id}: ${error.message}`,
+      );
+      if (error instanceof NotFoundException) {
+        throw error;
+      } else if (error instanceof InternalServerErrorException) {
+        throw error;
+      } else {
+        throw new InternalServerErrorException(
+          `Error processing series with ID ${id}: ${error.message}`,
+        );
+      }
+    }
+  }
+
+  // For backward compatibility - redirects to new implementation
+  @Get('series/:id/details')
+  @ApiOperation({
+    summary:
+      'Legacy endpoint - Get a series by ID with optional detailed anime information',
+    deprecated: true,
   })
   @ApiParam({ name: 'id', description: 'Series ID' })
   @ApiQuery({
@@ -44,26 +84,14 @@ export class AnimeController {
   })
   @ApiResponse({ status: 200, description: 'Series successfully retrieved' })
   @ApiResponse({ status: 404, description: 'Series not found' })
-  async getSeriesById(@Param('id') id: string, @Query() query: GetSeriesDto) {
-    try {
-      const series = await this.animeService.getSeriesWithDetails(
-        id,
-        query.detailed,
-        query.include,
-      );
-      if (!series) {
-        throw new NotFoundException(`Series with ID ${id} not found`);
-      }
-      return series;
-    } catch (error) {
-      this.logger.error(
-        `Error fetching series with ID ${id}: ${error.message}`,
-      );
-      throw error;
-    }
+  async getSeriesWithDetails(
+    @Param('id') id: string,
+    @Query() _: GetSeriesDto,
+  ) {
+    return this.getSeriesById(id);
   }
 
-  @Get(':id')
+  @Get('animeId/:id')
   @ApiOperation({ summary: 'Get an anime by ID' })
   @ApiParam({ name: 'id', description: 'Anime ID' })
   @ApiResponse({ status: 200, description: 'Anime successfully retrieved' })
