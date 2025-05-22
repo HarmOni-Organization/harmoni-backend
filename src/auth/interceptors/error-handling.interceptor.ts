@@ -1,4 +1,11 @@
-import { Injectable, NestInterceptor, ExecutionContext, CallHandler, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  Injectable,
+  NestInterceptor,
+  ExecutionContext,
+  CallHandler,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common';
 import { Observable, catchError, throwError } from 'rxjs';
 
 @Injectable()
@@ -9,8 +16,12 @@ export class ErrorHandlingInterceptor implements NestInterceptor {
         if (error instanceof HttpException) {
           return throwError(() => error);
         } else {
-          return throwError(() =>
-            new HttpException('Internal server error', HttpStatus.INTERNAL_SERVER_ERROR),
+          return throwError(
+            () =>
+              new HttpException(
+                'Internal server error',
+                HttpStatus.INTERNAL_SERVER_ERROR,
+              ),
           );
         }
       }),
