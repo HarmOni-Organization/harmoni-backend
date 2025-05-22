@@ -121,13 +121,13 @@ export class AnimeService {
    * Get series data by ID with enhanced processing
    * @param id The series ID
    * @param detailed Unused parameter kept for backward compatibility
-   * @param _include Unused parameter kept for backward compatibility
+   * @param include Unused parameter kept for backward compatibility
    * @returns Enhanced series data with main and sub series
    */
   async getSeriesWithDetails(
     id: string,
-    detailed: boolean = false,
-    include?: string[],
+    detailed: boolean = false, // eslint-disable-line @typescript-eslint/no-unused-vars
+    include?: string[], // eslint-disable-line @typescript-eslint/no-unused-vars
   ): Promise<any> {
     // For backwards compatibility, keep the old method signature but ignore the parameters
     return this.getSeriesById(id);
