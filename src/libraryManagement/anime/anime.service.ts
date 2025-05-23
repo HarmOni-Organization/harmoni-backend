@@ -183,7 +183,7 @@ export class AnimeService {
         episodes: 1,
         duration: 1,
         description: 1,
-        coverImage: 1,
+        images: 1,
         bannerImage: 1,
         genres: 1,
         tags: 1,
@@ -269,14 +269,12 @@ export class AnimeService {
       seriesId: series.seriesId,
       mainSeries,
       subSeries,
-      otherIds: series.otherIds.map((id) => animeMap[id]).filter(Boolean),
-      characterIds: series.characterIds
+      others: series.otherIds.map((id) => animeMap[id]).filter(Boolean),
+      characters: series.characterIds.map((id) => animeMap[id]).filter(Boolean),
+      adaptations: series.adaptationIds
         .map((id) => animeMap[id])
         .filter(Boolean),
-      adaptationIds: series.adaptationIds
-        .map((id) => animeMap[id])
-        .filter(Boolean),
-      spinOffIds: series.spinOffIds.map((id) => animeMap[id]).filter(Boolean),
+      spinOffs: series.spinOffIds.map((id) => animeMap[id]).filter(Boolean),
       relations: series.relations,
       manuallyModified: series.manuallyModified,
       updatedAt: series.updatedAt,
