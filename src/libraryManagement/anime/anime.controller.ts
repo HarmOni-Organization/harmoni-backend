@@ -8,6 +8,7 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { AnimeService } from './anime.service';
+import { AnimeSearchService } from './anime-search.service';
 import { GetSeriesDto } from './dto/series.dto';
 import {
   ApiQuery,
@@ -22,7 +23,45 @@ import {
 export class AnimeController {
   private readonly logger = new Logger(AnimeController.name);
 
-  constructor(private readonly animeService: AnimeService) {}
+  constructor(
+    private readonly animeService: AnimeService,
+    private readonly animeSearchService: AnimeSearchService,
+  ) {}
+
+  @Get('search')
+  @ApiOperation({ summary: 'Search for anime by title with fuzzy matching' })
+  @ApiQuery({
+    name: 'q',
+    description:
+      'Search query text (supports partial matching and typo tolerance)',
+    required: true,
+  })
+  @ApiQuery({
+    name: 'exact',
+    description:
+      'When true, returns only the single closest match instead of multiple results',
+    required: false,
+    type: Boolean,
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Returns list of anime matching the search query, or a single result if exact=true',
+  })
+  async searchAnime(@Query('q') q: string, @Query('exact') exact: string) {
+    try {
+      // Convert 'exact' query parameter string to boolean
+      const exactMatch = exact === 'true' || exact === '1';
+      return await this.animeSearchService.searchAnime(q || '', exactMatch);
+    } catch (error) {
+      this.logger.error(
+        `Error searching anime with query "${q}": ${error.message}`,
+      );
+      throw new InternalServerErrorException(
+        `Error searching anime: ${error.message}`,
+      );
+    }
+  }
 
   @Get('series/:id')
   @ApiOperation({
@@ -86,6 +125,7 @@ export class AnimeController {
   @ApiResponse({ status: 404, description: 'Series not found' })
   async getSeriesWithDetails(
     @Param('id') id: string,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     @Query() _: GetSeriesDto,
   ) {
     return this.getSeriesById(id);
