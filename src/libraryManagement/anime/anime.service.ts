@@ -183,7 +183,7 @@ export class AnimeService {
         episodes: 1,
         duration: 1,
         description: 1,
-        coverImage: 1,
+        images: 1,
         bannerImage: 1,
         genres: 1,
         tags: 1,
