@@ -33,6 +33,19 @@ export class AnimeSearchService {
     this.logger.log(
       `Searching anime with query: ${queryText} (exactMatch: ${exactMatch})`,
     );
+
+    // Direct matching for multi-word queries to avoid issues with partial matches
+    if (queryText.trim().includes(' ') || queryText.includes('/')) {
+      const directMatches = await this.findDirectMatches(queryText);
+      if (directMatches.length > 0) {
+        this.logger.log(
+          `Found ${directMatches.length} direct matches for "${queryText}"`,
+        );
+        return exactMatch ? directMatches[0] : directMatches;
+      }
+    }
+
+    // Normal search for other queries
     const query = this.normalizeQuery(queryText);
 
     if (!query) {
@@ -48,6 +61,214 @@ export class AnimeSearchService {
       );
       return this.standardSearch(query, exactMatch);
     }
+  }
+
+  /**
+   * Find direct matches for a query by looking for the exact string in titles
+   * @param queryText The query text
+   * @returns Array of matches with exact title matches first
+   */
+  private async findDirectMatches(queryText: string): Promise<any[]> {
+    const cleanQuery = queryText.toLowerCase().trim();
+    const queryRegex = this.createQueryRegexes(cleanQuery);
+
+    // First, try to find exact phrase matches
+    const directResults = await this.animeModel
+      .find({
+        $or: [
+          {
+            'title.english': {
+              $regex: queryRegex.exactPhraseRegex,
+              $options: 'i',
+            },
+          },
+          {
+            'title.romaji': {
+              $regex: queryRegex.exactPhraseRegex,
+              $options: 'i',
+            },
+          },
+          {
+            'title.userPreferred': {
+              $regex: queryRegex.exactPhraseRegex,
+              $options: 'i',
+            },
+          },
+          { synonyms: { $regex: queryRegex.exactPhraseRegex, $options: 'i' } },
+        ],
+      })
+      .limit(10)
+      .select('id title synonyms -_id')
+      .lean();
+
+    if (directResults.length > 0) {
+      // Post-process to ensure exact matches are on top
+      return this.sortByExactMatch(directResults, cleanQuery);
+    }
+
+    // If no direct matches, try to find titles containing all words in the query
+    const queryWords = cleanQuery.split(/[\s\/]+/);
+    if (queryWords.length > 1) {
+      const wordMatches = await this.animeModel
+        .find({
+          $and: queryWords.map((word) => ({
+            $or: [
+              { 'title.english': { $regex: word, $options: 'i' } },
+              { 'title.romaji': { $regex: word, $options: 'i' } },
+              { 'title.userPreferred': { $regex: word, $options: 'i' } },
+              { synonyms: { $regex: word, $options: 'i' } },
+            ],
+          })),
+        })
+        .limit(10)
+        .select('id title synonyms -_id')
+        .lean();
+
+      if (wordMatches.length > 0) {
+        return this.sortByExactMatch(wordMatches, cleanQuery);
+      }
+    }
+
+    return [];
+  }
+
+  /**
+   * Create regex patterns for matching a query in various formats
+   * @param query The query string
+   * @returns Object with various regex patterns
+   */
+  private createQueryRegexes(query: string) {
+    // Create various regex patterns to match the query in different forms
+
+    // Escape special regex characters in the query
+    const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    // For exact phrase matching (word boundaries)
+    const exactPhraseRegex = `\\b${escapedQuery}\\b`;
+
+    // For matching different word separators (space, slash, etc.)
+    const flexibleSeparators = escapedQuery
+      .replace(/\s+/g, '[\\s\\/]+') // Replace spaces with flexible space or slash
+      .replace(/\//g, '[\\s\\/]+'); // Replace slashes with flexible space or slash
+
+    // Additional regexes can be added here for more variations
+
+    return {
+      exactPhraseRegex,
+      flexibleSeparators,
+    };
+  }
+
+  /**
+   * Sort results to prioritize exact matches
+   * @param results Search results
+   * @param query Query text
+   * @returns Sorted results with exact matches first
+   */
+  private async sortByExactMatch(
+    results: any[],
+    query: string,
+  ): Promise<any[]> {
+    // Make a copy we can modify
+    const processedResults = [...results];
+
+    // Score each result for exact title match
+    processedResults.forEach((result) => {
+      let score = 0;
+      let matchFound = false;
+      let matchType = '';
+
+      // Check each title field
+      for (const field of ['english', 'romaji', 'native', 'userPreferred']) {
+        if (result.title && result.title[field]) {
+          const title = result.title[field].toLowerCase();
+
+          // Exact match gets highest score
+          if (title === query) {
+            score = 1000;
+            matchType = `exact-${field}`;
+            matchFound = true;
+            break;
+          }
+
+          // Contains the full query as a substring (case insensitive)
+          if (title.includes(query)) {
+            // If the query is a significant portion of the title
+            const portion = query.length / title.length;
+            const containsScore = 800 + portion * 100;
+
+            if (containsScore > score) {
+              score = containsScore;
+              matchType = `contains-${field}`;
+              matchFound = true;
+            }
+          }
+
+          // Contains the query with different separators (space vs slash)
+          const altQuerySpaces = query.replace(/\//g, ' ');
+          const altQuerySlashes = query.replace(/\s+/g, '/');
+
+          if (
+            title.includes(altQuerySpaces) ||
+            title.includes(altQuerySlashes)
+          ) {
+            const altScore = 750;
+            if (altScore > score) {
+              score = altScore;
+              matchType = `alt-format-${field}`;
+              matchFound = true;
+            }
+          }
+        }
+      }
+
+      // Check synonyms
+      if (result.synonyms && Array.isArray(result.synonyms)) {
+        for (const synonym of result.synonyms) {
+          if (typeof synonym !== 'string') continue;
+
+          const synonymLower = synonym.toLowerCase();
+
+          // Exact match with synonym
+          if (synonymLower === query) {
+            const synScore = 700;
+            if (synScore > score) {
+              score = synScore;
+              matchType = 'exact-synonym';
+              matchFound = true;
+            }
+          }
+
+          // Contains the query as a substring
+          if (synonymLower.includes(query)) {
+            const portion = query.length / synonymLower.length;
+            const synContainsScore = 600 + portion * 50;
+
+            if (synContainsScore > score) {
+              score = synContainsScore;
+              matchType = 'contains-synonym';
+              matchFound = true;
+            }
+          }
+        }
+      }
+
+      // Set the score on the result
+      result._score = score;
+      result._matchType = matchType;
+      result._matchFound = matchFound;
+    });
+
+    // Sort results by score descending
+    processedResults.sort((a, b) => b._score - a._score);
+
+    // Get only results with a match
+    const matchedResults = processedResults.filter((r) => r._matchFound);
+
+    // Add series IDs to the results
+    return await this.addSeriesIds(
+      matchedResults.length > 0 ? matchedResults : processedResults,
+    );
   }
 
   /**
@@ -101,6 +322,17 @@ export class AnimeSearchService {
    * @returns Search results with series IDs
    */
   private async standardSearch(query: string, exactMatch: boolean = false) {
+    // First try the direct matching approach for multi-word queries
+    if (query.includes(' ') || query.includes('/')) {
+      const directMatches = await this.findDirectMatches(query);
+      if (directMatches.length > 0) {
+        this.logger.log(
+          `Found ${directMatches.length} direct matches in standardSearch`,
+        );
+        return exactMatch ? directMatches[0] : directMatches;
+      }
+    }
+
     // Create regex patterns for case-insensitive partial matching
     const regexPattern = new RegExp(query, 'i');
 
@@ -145,286 +377,15 @@ export class AnimeSearchService {
       .select('id title synonyms -_id')
       .lean();
 
-    // Score and sort results by relevance
-    const scoredResults = this.scoreResults(searchResults, query, queryWords);
+    // Sort and score the results
+    const sortedResults = await this.sortByExactMatch(searchResults, query);
 
     // Process results - if exactMatch, return only the best match
-    const finalResults = exactMatch
-      ? scoredResults.length > 0
-        ? [scoredResults[0]]
-        : []
-      : scoredResults.slice(0, 10);
-
-    const results = await this.addSeriesIds(finalResults);
-
-    // If exactMatch is true, return only the single best match rather than an array
-    return exactMatch ? (results.length > 0 ? results[0] : null) : results;
-  }
-
-  /**
-   * Score search results by relevance to the query
-   * @param results Search results
-   * @param query Search query
-   * @param queryWords Individual words from the query
-   * @returns Scored and sorted results
-   */
-  private scoreResults(results, query, queryWords) {
-    const queryLower = query.toLowerCase();
-    const queryNoSpace = queryLower.replace(/\s+/g, '');
-    // Remove any symbols from the query for cleaner comparison
-    const queryNoPunctuation = queryLower.replace(/[^\w\s]/g, '');
-
-    return results
-      .map((result) => {
-        // Start with a base score
-        let score = 0;
-        let bestMatchField = '';
-        let matchDetails = [];
-
-        // Check each title field
-        const titleFields = ['english', 'romaji', 'native', 'userPreferred'];
-        for (const field of titleFields) {
-          if (result.title && result.title[field]) {
-            const titleValue = result.title[field].toLowerCase();
-            const titleNoSpace = titleValue.replace(/\s+/g, '');
-            // Clean the title of punctuation for comparison
-            const titleNoPunctuation = titleValue.replace(/[^\w\s]/g, '');
-
-            // Exact match gets highest score
-            if (titleValue === queryLower) {
-              score = 100;
-              bestMatchField = field;
-              matchDetails.push('exact match');
-              break;
-            }
-
-            // Starts with query gets high score
-            if (titleValue.startsWith(queryLower)) {
-              const matchScore =
-                80 + (queryLower.length / titleValue.length) * 20;
-              if (matchScore > score) {
-                score = matchScore;
-                bestMatchField = field;
-                matchDetails = ['starts with'];
-              }
-            }
-
-            // Contains query gets medium score
-            else if (titleValue.includes(queryLower)) {
-              const matchScore =
-                60 + (queryLower.length / titleValue.length) * 20;
-              if (matchScore > score) {
-                score = matchScore;
-                bestMatchField = field;
-                matchDetails = ['contains'];
-              }
-            }
-
-            // No-space match (overlordii matches "overlord ii")
-            else if (titleNoSpace.includes(queryNoSpace)) {
-              const matchScore =
-                50 + (queryNoSpace.length / titleNoSpace.length) * 10;
-              if (matchScore > score) {
-                score = matchScore;
-                bestMatchField = field;
-                matchDetails = ['no-space match'];
-              }
-            }
-
-            // No-punctuation match
-            else if (titleNoPunctuation.includes(queryNoPunctuation)) {
-              const matchScore =
-                45 +
-                (queryNoPunctuation.length / titleNoPunctuation.length) * 10;
-              if (matchScore > score) {
-                score = matchScore;
-                bestMatchField = field;
-                matchDetails = ['no-punctuation match'];
-              }
-            }
-
-            // Word-level matching (multiple words in query match)
-            else {
-              let wordMatches = 0;
-              let wordWeight = 0;
-
-              for (const word of queryWords) {
-                if (word.length < 2) continue; // Skip very short words
-
-                if (titleValue.includes(word.toLowerCase())) {
-                  wordMatches++;
-                  wordWeight += word.length;
-                }
-              }
-
-              if (wordMatches > 0) {
-                // More matching words and longer words = higher score
-                const wordCoverage = wordWeight / queryNoPunctuation.length;
-                const matchScore = 35 + wordMatches * 5 + wordCoverage * 20;
-
-                if (matchScore > score) {
-                  score = matchScore;
-                  bestMatchField = field;
-                  matchDetails = [
-                    `${wordMatches}/${queryWords.length} words match`,
-                  ];
-                }
-              }
-            }
-          }
-        }
-
-        // Check synonyms with similar logic
-        if (result.synonyms && Array.isArray(result.synonyms)) {
-          for (const synonym of result.synonyms) {
-            if (typeof synonym !== 'string') continue;
-
-            const synonymLower = synonym.toLowerCase();
-            const synonymNoSpace = synonymLower.replace(/\s+/g, '');
-            const synonymNoPunctuation = synonymLower.replace(/[^\w\s]/g, '');
-
-            // Exact match gets high score
-            if (synonymLower === queryLower) {
-              const matchScore = 75;
-              if (matchScore > score) {
-                score = matchScore;
-                bestMatchField = 'synonym';
-                matchDetails = ['exact match'];
-              }
-              break;
-            }
-
-            // Starts with query
-            if (synonymLower.startsWith(queryLower)) {
-              const matchScore =
-                65 + (queryLower.length / synonymLower.length) * 10;
-              if (matchScore > score) {
-                score = matchScore;
-                bestMatchField = 'synonym';
-                matchDetails = ['starts with'];
-              }
-            }
-
-            // Contains query
-            else if (synonymLower.includes(queryLower)) {
-              const matchScore =
-                55 + (queryLower.length / synonymLower.length) * 10;
-              if (matchScore > score) {
-                score = matchScore;
-                bestMatchField = 'synonym';
-                matchDetails = ['contains'];
-              }
-            }
-
-            // No-space match
-            else if (synonymNoSpace.includes(queryNoSpace)) {
-              const matchScore =
-                45 + (queryNoSpace.length / synonymNoSpace.length) * 10;
-              if (matchScore > score) {
-                score = matchScore;
-                bestMatchField = 'synonym';
-                matchDetails = ['no-space match'];
-              }
-            }
-
-            // No-punctuation match
-            else if (synonymNoPunctuation.includes(queryNoPunctuation)) {
-              const matchScore =
-                40 +
-                (queryNoPunctuation.length / synonymNoPunctuation.length) * 10;
-              if (matchScore > score) {
-                score = matchScore;
-                bestMatchField = 'synonym';
-                matchDetails = ['no-punctuation match'];
-              }
-            }
-
-            // Word-level matching for synonyms
-            else {
-              let wordMatches = 0;
-              let wordWeight = 0;
-
-              for (const word of queryWords) {
-                if (word.length < 2) continue;
-
-                if (synonymLower.includes(word.toLowerCase())) {
-                  wordMatches++;
-                  wordWeight += word.length;
-                }
-              }
-
-              if (wordMatches > 0) {
-                const wordCoverage = wordWeight / queryNoPunctuation.length;
-                const matchScore = 30 + wordMatches * 5 + wordCoverage * 15;
-
-                if (matchScore > score) {
-                  score = matchScore;
-                  bestMatchField = 'synonym';
-                  matchDetails = [
-                    `${wordMatches}/${queryWords.length} words match`,
-                  ];
-                }
-              }
-            }
-          }
-        }
-
-        // Special case for initial matches (handling "overlord pleple" -> "Overlord: Ple Ple Pleiades")
-        // Check for titleWords matching queryWords by initial characters
-        const titleWordsMap = {};
-        titleFields.forEach((field) => {
-          if (result.title && result.title[field]) {
-            const titleWords = result.title[field]
-              .toLowerCase()
-              .split(/[\s:,-]+/)
-              .filter((w) => w.length > 0);
-            titleWords.forEach((word) => {
-              if (!titleWordsMap[word.charAt(0)]) {
-                titleWordsMap[word.charAt(0)] = [];
-              }
-              titleWordsMap[word.charAt(0)].push(word);
-            });
-          }
-        });
-
-        // Check if query words match title word initials
-        let initialMatches = 0;
-        for (const qWord of queryWords) {
-          const initial = qWord.charAt(0);
-          if (titleWordsMap[initial]) {
-            // Check if any title word starting with this initial
-            // shares more characters with the query word
-            const matchingWords = titleWordsMap[initial].filter((tWord) => {
-              // Check if first 2-3 chars match
-              return tWord.startsWith(
-                qWord.substring(0, Math.min(3, qWord.length)),
-              );
-            });
-
-            if (matchingWords.length > 0) initialMatches++;
-          }
-        }
-
-        if (initialMatches > 1) {
-          // If multiple query words match title word initials, this is probably a good match
-          const initialMatchScore = 40 + initialMatches * 8;
-          if (initialMatchScore > score) {
-            score = initialMatchScore;
-            bestMatchField = 'initial matches';
-            matchDetails = [`${initialMatches} initial matches`];
-          }
-        }
-
-        // Remove matchDetails from result if needed
-        return {
-          ...result,
-          score,
-          matchedOn: bestMatchField,
-          matchDetails, // Remove this line in production
-        };
-      })
-      .filter((result) => result.score > 0) // Only include results with a score
-      .sort((a, b) => b.score - a.score); // Sort by score descending
+    return exactMatch
+      ? sortedResults.length > 0
+        ? sortedResults[0]
+        : null
+      : sortedResults;
   }
 
   /**
