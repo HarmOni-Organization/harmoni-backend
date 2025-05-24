@@ -29,11 +29,11 @@ export class AnimeController {
   ) {}
 
   @Get('search')
-  @ApiOperation({ summary: 'Search for anime by title with fuzzy matching' })
+  @ApiOperation({ summary: 'Search for anime with season support' })
   @ApiQuery({
     name: 'q',
     description:
-      'Search query text (supports partial matching and typo tolerance)',
+      'Search query text with optional season info (e.g., "Overlord / S3", "Attack on Titan / season 2")',
     required: true,
   })
   @ApiQuery({
@@ -42,23 +42,30 @@ export class AnimeController {
       'When true, returns only the single closest match instead of multiple results',
     required: false,
     type: Boolean,
+    default: true,
   })
   @ApiResponse({
     status: 200,
     description:
-      'Returns list of anime matching the search query, or a single result if exact=true',
+      'Returns the anime matching the search query with the specified season if found',
   })
-  async searchAnime(@Query('q') q: string, @Query('exact') exact: string) {
+  async searchAnimeWithSeason(
+    @Query('q') q: string,
+    @Query('exact') exact: string,
+  ) {
     try {
       // Convert 'exact' query parameter string to boolean
-      const exactMatch = exact === 'true' || exact === '1';
-      return await this.animeSearchService.searchAnime(q || '', exactMatch);
+      const exactMatch = !!exact;
+      return await this.animeSearchService.searchAnimeWithSeason(
+        q || '',
+        exactMatch,
+      );
     } catch (error) {
       this.logger.error(
-        `Error searching anime with query "${q}": ${error.message}`,
+        `Error searching anime with season query "${q}": ${error.message}`,
       );
       throw new InternalServerErrorException(
-        `Error searching anime: ${error.message}`,
+        `Error searching anime with season: ${error.message}`,
       );
     }
   }
@@ -167,6 +174,24 @@ export class AnimeController {
     } catch (error) {
       this.logger.error(`Error fetching multiple anime: ${error.message}`);
       throw error;
+    }
+  }
+
+  @Get('clear-cache')
+  @ApiOperation({ summary: 'Clear the internal anime data cache' })
+  @ApiResponse({
+    status: 200,
+    description: 'Cache cleared successfully',
+  })
+  async clearCache() {
+    try {
+      const clearedEntries = this.animeService.clearCache();
+      return { success: true, clearedEntries };
+    } catch (error) {
+      this.logger.error(`Error clearing cache: ${error.message}`);
+      throw new InternalServerErrorException(
+        `Error clearing cache: ${error.message}`,
+      );
     }
   }
 }

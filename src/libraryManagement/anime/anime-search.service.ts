@@ -18,6 +18,16 @@ export class AnimeSearchService {
     'drama',
   ];
 
+  // Season-related words for parsing
+  private readonly SEASON_WORDS = [
+    's',
+    'season',
+    'part',
+    'chapter',
+    'sezon',
+    'sesson',
+  ];
+
   constructor(
     @InjectModel('Anime', 'animeDB') private animeModel: Model<IAnime>,
     @InjectModel('Series', 'animeDB') private seriesModel: Model<ISeries>,
@@ -33,6 +43,7 @@ export class AnimeSearchService {
     this.logger.log(
       `Searching anime with query: ${queryText} (exactMatch: ${exactMatch})`,
     );
+    console.log(queryText, '------------------------');
 
     // Direct matching for multi-word queries to avoid issues with partial matches
     if (queryText.trim().includes(' ') || queryText.includes('/')) {
@@ -61,6 +72,234 @@ export class AnimeSearchService {
       );
       return this.standardSearch(query, exactMatch);
     }
+  }
+
+  /**
+   * Search for anime with season support
+   * @param queryText Search query that may include season information
+   * @returns List of matching anime or the specific season requested
+   */
+  async searchAnimeWithSeason(queryText: string, exactMatch: boolean = true) {
+    // Extract title and season information
+    const { title, season } = this.extractTitleAndSeason(queryText);
+
+    // If no season was specified, use existing search
+    if (!season) {
+      return this.searchAnime(title, exactMatch);
+    }
+
+    // Search for the base anime
+    const baseAnime = await this.searchAnime(title, true); // exactMatch=true
+
+    if (!baseAnime) {
+      return [];
+    }
+
+    // If no season specified or no series ID, return base anime
+    if (!season || !baseAnime.seriesId) {
+      return [baseAnime];
+    }
+
+    // Find the correct season using relation graph
+    return this.findSeasonByNumber(baseAnime, season);
+  }
+
+  /**
+   * Extract title and season information from a search query
+   * @param input Search query that may contain season information
+   * @returns Object with title and optional season number
+   */
+  private extractTitleAndSeason(input: string): {
+    title: string;
+    season?: number;
+  } {
+    const parts = input.trim().split(/\s*\/\s*/);
+    if (parts.length <= 1) return { title: input.trim() };
+
+    const last = parts[parts.length - 1].toLowerCase();
+    const title = parts.slice(0, -1).join(' / ').trim();
+
+    const match = this.SEASON_WORDS.find((w) => last.startsWith(w));
+    const number = last.replace(/[^\d]/g, '');
+
+    if (match && /^\d+$/.test(number)) {
+      return { title, season: parseInt(number) };
+    }
+
+    return { title: input.trim() };
+  }
+
+  /**
+   * Find a specific season of an anime using the relation graph
+   * @param baseAnime The base anime found from the title search
+   * @param targetSeason The season number to find
+   * @returns The found season anime or the base anime if not found
+   */
+  private async findSeasonByNumber(baseAnime, targetSeason: number) {
+    console.log(baseAnime, '------------------------______', targetSeason);
+
+    // Find all anime in the same series
+    const seriesData = await this.seriesModel
+      .findOne({ seriesId: baseAnime.seriesId })
+      .lean();
+
+    if (!seriesData) {
+      return [baseAnime];
+    }
+    console.log(seriesData, '------------------------______');
+
+    // Get all anime IDs in this series
+    const allSeriesAnimeIds = [
+      ...(seriesData.animeIds || []),
+      // ...(seriesData.spinOffIds || []),
+      // ...(seriesData.adaptationIds || []),
+      // ...(seriesData.characterIds || []),
+      // ...(seriesData.otherIds || []),
+    ];
+
+    console.log(allSeriesAnimeIds, '------------------------______');
+
+    if (allSeriesAnimeIds.length === 0) {
+      return [baseAnime];
+    }
+
+    // Create a set for quick lookup
+    const validAnimeIds = new Set(allSeriesAnimeIds);
+
+    // Get relations from the series data
+    const relations = seriesData.relations || [];
+
+    // Build the relation graph
+    const relationGraph = this.buildRelationGraph(relations, validAnimeIds);
+
+    // Find all chains starting from anime with no prequels
+    const chains = this.findSeriesChains(relationGraph, baseAnime.id);
+
+    // Get the main chain containing our base anime
+    const mainChain = chains.find((chain) => chain.includes(baseAnime.id));
+
+    if (!mainChain || mainChain.length < targetSeason) {
+      return [baseAnime]; // Return base anime if season not found
+    }
+
+    // Get the target season anime
+    const seasonAnimeId = mainChain[targetSeason - 1];
+
+    // Fetch complete anime data
+    const seasonAnime = await this.animeModel
+      .findOne({ id: seasonAnimeId })
+      .select('id title synonyms -_id')
+      .lean();
+
+    return seasonAnime
+      ? [{ ...seasonAnime, seriesId: baseAnime.seriesId }]
+      : [baseAnime];
+  }
+
+  /**
+   * Build directed graph from series relations
+   * @param relations Array of relations from series
+   * @param validAnimeIds Set of valid anime IDs
+   * @returns Map representing the directed graph
+   */
+  private buildRelationGraph(
+    relations: Array<{
+      sourceAnimeId: string;
+      targetAnimeId: string;
+      relationType: string;
+      direction: string;
+    }>,
+    validAnimeIds: Set<string>,
+  ): Map<string, string[]> {
+    const preqGraph = new Map<string, string[]>();
+    const filteredRelations = relations.filter(
+      (r) => r.relationType === 'SEQUEL',
+    );
+
+    // Remove duplicates from relations and ensure both source and target exist
+    const uniqueRelations = filteredRelations.filter(
+      (rel, index, self) =>
+        index ===
+          self.findIndex(
+            (r) =>
+              r.sourceAnimeId === rel.sourceAnimeId &&
+              r.targetAnimeId === rel.targetAnimeId,
+          ) &&
+        validAnimeIds.has(rel.sourceAnimeId) &&
+        validAnimeIds.has(rel.targetAnimeId),
+    );
+
+    if (uniqueRelations.length < filteredRelations.length) {
+      this.logger.warn(
+        `Removed ${
+          filteredRelations.length - uniqueRelations.length
+        } relations with missing anime data`,
+      );
+    }
+
+    // Populate the graph
+    uniqueRelations.forEach((rel) => {
+      if (!preqGraph.has(rel.sourceAnimeId)) {
+        preqGraph.set(rel.sourceAnimeId, []);
+      }
+      preqGraph.get(rel.sourceAnimeId)!.push(rel.targetAnimeId);
+    });
+
+    return preqGraph;
+  }
+
+  /**
+   * Find all chains in a series starting from root nodes
+   * @param graph Relation graph built from buildRelationGraph
+   * @param startId The ID of the anime we're searching for
+   * @returns Array of chains (arrays of anime IDs in order)
+   */
+  private findSeriesChains(
+    graph: Map<string, string[]>,
+    startId: string,
+  ): string[][] {
+    // Find potential starting points (anime with no prequels)
+    const startPoints = new Set([...graph.keys()]);
+
+    // Remove any anime that appears as a sequel
+    graph.forEach((sequels) => {
+      sequels.forEach((sequel) => startPoints.delete(sequel));
+    });
+
+    const chains: string[][] = [];
+
+    // Build chains from each starting point
+    startPoints.forEach((startPoint) => {
+      const chain = [startPoint];
+      let current = startPoint;
+
+      // Follow the chain of sequels
+      while (graph.has(current) && graph.get(current).length > 0) {
+        // For simplicity, just take the first sequel if multiple exist
+        const next = graph.get(current)[0];
+        chain.push(next);
+        current = next;
+      }
+
+      chains.push(chain);
+    });
+
+    // If startId wasn't in a chain yet, build a chain from it
+    if (!chains.some((chain) => chain.includes(startId))) {
+      const chain = [startId];
+      let current = startId;
+
+      // Follow the chain of sequels
+      while (graph.has(current) && graph.get(current).length > 0) {
+        const next = graph.get(current)[0];
+        chain.push(next);
+        current = next;
+      }
+
+      chains.push(chain);
+    }
+
+    return chains;
   }
 
   /**
@@ -404,13 +643,7 @@ export class AnimeSearchService {
     // Find all series that contain any of these anime IDs
     const seriesData = await this.seriesModel
       .find({
-        $or: [
-          { animeIds: { $in: animeIds } },
-          { spinOffIds: { $in: animeIds } },
-          { adaptationIds: { $in: animeIds } },
-          { characterIds: { $in: animeIds } },
-          { otherIds: { $in: animeIds } },
-        ],
+        $or: [{ animeIds: { $in: animeIds } }],
       })
       .select(
         'seriesId animeIds spinOffIds adaptationIds characterIds otherIds',
@@ -421,13 +654,7 @@ export class AnimeSearchService {
     const animeToSeries = {};
 
     seriesData.forEach((series) => {
-      const allSeriesAnimeIds = [
-        ...series.animeIds,
-        ...series.spinOffIds,
-        ...series.adaptationIds,
-        ...series.characterIds,
-        ...series.otherIds,
-      ];
+      const allSeriesAnimeIds = [...series.animeIds];
 
       // Find which of our search results are in this series
       allSeriesAnimeIds.forEach((animeId) => {
