@@ -37,13 +37,12 @@ export class AnimeSearchService {
    * Search for anime based on normalized query text
    * @param queryText Search query from user
    * @param exactMatch If true, returns only the single closest match
-   * @returns List of matching anime with their series IDs, or single closest match
+   * @returns List of matching anime or single match with normalized format
    */
-  async searchAnime(queryText: string, exactMatch: boolean = false) {
+  async searchAnime(queryText: string, exactMatch: boolean = true) {
     this.logger.log(
       `Searching anime with query: ${queryText} (exactMatch: ${exactMatch})`,
     );
-    console.log(queryText, '------------------------');
 
     // Direct matching for multi-word queries to avoid issues with partial matches
     if (queryText.trim().includes(' ') || queryText.includes('/')) {
@@ -52,7 +51,8 @@ export class AnimeSearchService {
         this.logger.log(
           `Found ${directMatches.length} direct matches for "${queryText}"`,
         );
-        return exactMatch ? directMatches[0] : directMatches;
+        const formattedResults = this.formatResults(directMatches);
+        return exactMatch ? formattedResults[0] : formattedResults;
       }
     }
 
@@ -65,7 +65,8 @@ export class AnimeSearchService {
 
     // Try Atlas Search first, fall back to standard MongoDB search if it fails
     try {
-      return await this.atlasSearch(query, exactMatch);
+      const results = await this.atlasSearch(query, exactMatch);
+      return results;
     } catch (error) {
       this.logger.warn(
         `Atlas Search failed, falling back to standard search: ${error.message}`,
@@ -75,9 +76,26 @@ export class AnimeSearchService {
   }
 
   /**
+   * Format results to the standard response format
+   * @param results Raw search results
+   * @returns Normalized results with consistent fields
+   */
+  private formatResults(results: any[]): any[] {
+    return results.map((anime) => ({
+      id: anime.id,
+      seriesId: anime.seriesId || null,
+      title: this.extractTitleString(anime),
+      episodes: anime.episodes || null,
+      format: anime.format || null,
+      synonyms: anime.synonyms || [],
+    }));
+  }
+
+  /**
    * Search for anime with season support
    * @param queryText Search query that may include season information
-   * @returns List of matching anime or the specific season requested
+   * @param exactMatch If true, returns only the single closest match
+   * @returns Matching anime with specified season or base anime if not found
    */
   async searchAnimeWithSeason(queryText: string, exactMatch: boolean = true) {
     // Extract title and season information
@@ -92,16 +110,23 @@ export class AnimeSearchService {
     const baseAnime = await this.searchAnime(title, true); // exactMatch=true
 
     if (!baseAnime) {
-      return [];
+      return exactMatch ? null : [];
     }
 
-    // If no season specified or no series ID, return base anime
-    if (!season || !baseAnime.seriesId) {
-      return [baseAnime];
+    // If no series ID, return base anime
+    if (!baseAnime.seriesId) {
+      return exactMatch ? baseAnime : [baseAnime];
     }
 
     // Find the correct season using relation graph
-    return this.findSeasonByNumber(baseAnime, season);
+    const seasonResults = await this.findSeasonByNumber(baseAnime, season);
+
+    // Ensure response format is consistent with searchAnime
+    if (exactMatch) {
+      return seasonResults.length > 0 ? seasonResults[0] : baseAnime;
+    } else {
+      return seasonResults;
+    }
   }
 
   /**
@@ -136,8 +161,6 @@ export class AnimeSearchService {
    * @returns The found season anime or the base anime if not found
    */
   private async findSeasonByNumber(baseAnime, targetSeason: number) {
-    console.log(baseAnime, '------------------------______', targetSeason);
-
     // Find all anime in the same series
     const seriesData = await this.seriesModel
       .findOne({ seriesId: baseAnime.seriesId })
@@ -146,18 +169,15 @@ export class AnimeSearchService {
     if (!seriesData) {
       return [baseAnime];
     }
-    console.log(seriesData, '------------------------______');
 
     // Get all anime IDs in this series
     const allSeriesAnimeIds = [
       ...(seriesData.animeIds || []),
-      // ...(seriesData.spinOffIds || []),
-      // ...(seriesData.adaptationIds || []),
-      // ...(seriesData.characterIds || []),
-      // ...(seriesData.otherIds || []),
+      ...(seriesData.spinOffIds || []),
+      ...(seriesData.adaptationIds || []),
+      ...(seriesData.characterIds || []),
+      ...(seriesData.otherIds || []),
     ];
-
-    console.log(allSeriesAnimeIds, '------------------------______');
 
     if (allSeriesAnimeIds.length === 0) {
       return [baseAnime];
@@ -188,12 +208,35 @@ export class AnimeSearchService {
     // Fetch complete anime data
     const seasonAnime = await this.animeModel
       .findOne({ id: seasonAnimeId })
-      .select('id title synonyms -_id')
+      .select('id title synonyms episodes format seriesId -_id')
       .lean();
 
-    return seasonAnime
-      ? [{ ...seasonAnime, seriesId: baseAnime.seriesId }]
-      : [baseAnime];
+    if (!seasonAnime) {
+      return [baseAnime];
+    }
+
+    // Format to standard format
+    const formattedAnime = {
+      id: seasonAnime.id,
+      seriesId: baseAnime.seriesId,
+      title: this.extractTitleString(seasonAnime),
+      episodes: seasonAnime.episodes || null,
+      format: seasonAnime.format || null,
+      synonyms: seasonAnime.synonyms || [],
+    };
+
+    return [formattedAnime];
+  }
+
+  /**
+   * Extract a title string from anime data
+   * @param anime Anime data object
+   * @returns String title
+   */
+  private extractTitleString(anime: any): string {
+    if (!anime.title) return 'Unknown';
+
+    return anime.title;
   }
 
   /**
@@ -337,7 +380,7 @@ export class AnimeSearchService {
         ],
       })
       .limit(10)
-      .select('id title synonyms -_id')
+      .select('id title synonyms episodes format -_id')
       .lean();
 
     if (directResults.length > 0) {
@@ -360,7 +403,7 @@ export class AnimeSearchService {
           })),
         })
         .limit(10)
-        .select('id title synonyms -_id')
+        .select('id title synonyms episodes format -_id')
         .lean();
 
       if (wordMatches.length > 0) {
@@ -505,9 +548,12 @@ export class AnimeSearchService {
     const matchedResults = processedResults.filter((r) => r._matchFound);
 
     // Add series IDs to the results
-    return await this.addSeriesIds(
+    const resultsWithSeriesIds = await this.addSeriesIds(
       matchedResults.length > 0 ? matchedResults : processedResults,
     );
+
+    // Format results to match standardized format
+    return this.formatResults(resultsWithSeriesIds);
   }
 
   /**
@@ -543,15 +589,27 @@ export class AnimeSearchService {
         $project: {
           _id: 0,
           id: 1,
+          seriesId: 1,
           title: 1,
+          episodes: 1,
+          format: 1,
+          synonyms: 1,
         },
       },
     ]);
 
-    const results = await this.addSeriesIds(searchResults);
+    // Add series IDs if not already present
+    const resultsWithSeriesIds = await this.addSeriesIds(searchResults);
+
+    // Format results to standard format
+    const formattedResults = this.formatResults(resultsWithSeriesIds);
 
     // If exactMatch is true, return only the single best match
-    return exactMatch ? (results.length > 0 ? results[0] : null) : results;
+    return exactMatch
+      ? formattedResults.length > 0
+        ? formattedResults[0]
+        : null
+      : formattedResults;
   }
 
   /**
@@ -613,7 +671,7 @@ export class AnimeSearchService {
         ],
       })
       .limit(exactMatch ? 15 : 30)
-      .select('id title synonyms -_id')
+      .select('id title synonyms episodes format -_id')
       .lean();
 
     // Sort and score the results
@@ -667,7 +725,7 @@ export class AnimeSearchService {
     // Combine results
     return searchResults.map((anime) => ({
       ...anime,
-      seriesId: animeToSeries[anime.id] || null,
+      seriesId: animeToSeries[anime.id] || anime.seriesId || null,
     }));
   }
 

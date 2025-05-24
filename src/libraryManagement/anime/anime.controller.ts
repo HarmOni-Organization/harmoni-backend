@@ -31,7 +31,7 @@ export class AnimeController {
   @Get('search')
   @ApiOperation({ summary: 'Search for anime with season support' })
   @ApiQuery({
-    name: 'q',
+    name: 'name',
     description:
       'Search query text with optional season info (e.g., "Overlord / S3", "Attack on Titan / season 2")',
     required: true,
@@ -47,25 +47,46 @@ export class AnimeController {
   @ApiResponse({
     status: 200,
     description:
-      'Returns the anime matching the search query with the specified season if found',
+      'Returns anime matching the search query with the specified season if found',
+    schema: {
+      type: 'object',
+      properties: {
+        id: {
+          type: 'string',
+          example: 'anime_06211c05-8ce0-4289-b6d4-ad41b984154f',
+        },
+        seriesId: {
+          type: 'string',
+          example: 'series_612c6510-3948-4a0c-a856-6f961e2b478a',
+        },
+        title: { type: 'string', example: 'Overlord' },
+        episodes: { type: 'number', example: 13 },
+        format: { type: 'string', example: 'TV' },
+        synonyms: {
+          type: 'array',
+          items: { type: 'string' },
+          example: ['Overlord Season 1', 'オーバーロード'],
+        },
+      },
+    },
   })
   async searchAnimeWithSeason(
-    @Query('q') q: string,
+    @Query('name') name: string,
     @Query('exact') exact: string,
   ) {
     try {
       // Convert 'exact' query parameter string to boolean
-      const exactMatch = !!exact;
+      const exactMatch = exact !== 'false';
       return await this.animeSearchService.searchAnimeWithSeason(
-        q || '',
+        name || '',
         exactMatch,
       );
     } catch (error) {
       this.logger.error(
-        `Error searching anime with season query "${q}": ${error.message}`,
+        `Error searching anime with query "${name}": ${error.message}`,
       );
       throw new InternalServerErrorException(
-        `Error searching anime with season: ${error.message}`,
+        `Error searching anime: ${error.message}`,
       );
     }
   }
