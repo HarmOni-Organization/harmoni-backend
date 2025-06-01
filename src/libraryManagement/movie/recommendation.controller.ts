@@ -39,10 +39,10 @@ export class RecommendationController {
   ) {
     try {
       const { genre, topN = 30 } = query;
-
-      // Get the authorization token from the request headers
-      const authHeader = this.getHeaderValue(request.headers.authorization);
-      const internalKey = process.env.X_INTERNAL_KEY;
+      const headers = request.headers;
+      // Get the authorization token and internal key from the request headers
+      const authHeader = this.getHeaderValue(headers.authorization);
+      const internalKey = this.getHeaderValue(headers['x-internal-key']);
 
       if (!authHeader) {
         throw new HttpException(
@@ -58,7 +58,10 @@ export class RecommendationController {
         internalKey,
       );
     } catch (error) {
-      console.error('Failed to fetch genre recommendations:', error);
+      this.logger.error(
+        `Failed to fetch genre recommendations: ${error.message}`,
+        error,
+      );
       throw new InternalServerErrorException(
         error.message || 'Failed to fetch genre recommendations',
       );
@@ -74,8 +77,9 @@ export class RecommendationController {
       const { movieId, topN = 24 } = query;
 
       // Get the authorization token from the request headers
-      const authHeader = this.getHeaderValue(request.headers.authorization);
-      const internalKey = process.env.X_INTERNAL_KEY;
+      const headers = request.headers;
+      const authHeader = this.getHeaderValue(headers.authorization);
+      const internalKey = this.getHeaderValue(headers['x-internal-key']);
 
       if (!authHeader) {
         throw new HttpException(
@@ -108,7 +112,10 @@ export class RecommendationController {
         internalKey,
       );
     } catch (error) {
-      console.error('Failed to fetch user recommendations:', error);
+      this.logger.error(
+        `Failed to fetch user recommendations: ${error.message}`,
+        error,
+      );
       throw new InternalServerErrorException(
         error.message || 'Failed to fetch user recommendations',
       );
@@ -122,7 +129,9 @@ export class RecommendationController {
 
       // Get the authorization token from the request headers
       const authHeader = this.getHeaderValue(request.headers.authorization);
-      const internalKey = process.env.X_INTERNAL_KEY;
+      const internalKey = this.getHeaderValue(
+        request.headers['x-internal-key'],
+      );
 
       if (!authHeader) {
         throw new HttpException(
@@ -167,7 +176,10 @@ export class RecommendationController {
         internalKey,
       );
     } catch (error) {
-      console.error('Failed to fetch poster movie:', error);
+      this.logger.error(
+        `Failed to fetch poster movie: ${error.message}`,
+        error,
+      );
       throw new InternalServerErrorException(
         error.message || 'Failed to fetch poster movie',
       );
