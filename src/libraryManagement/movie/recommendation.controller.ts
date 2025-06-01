@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import {
   GenreRecommendationDto,
+  MoviePosterDto,
   MovieRecommendationDto,
 } from './dto/recommendation.dto';
 import { Request } from 'express';
@@ -20,7 +21,7 @@ interface RequestWithUser extends Request {
   user: any;
 }
 
-@Controller('recommendations')
+@Controller('library/recommendations')
 export class RecommendationController {
   private readonly logger = new Logger(RecommendationController.name);
 
@@ -41,9 +42,7 @@ export class RecommendationController {
 
       // Get the authorization token from the request headers
       const authHeader = this.getHeaderValue(request.headers.authorization);
-      const internalKey = this.getHeaderValue(
-        request.headers['x-internal-key'],
-      );
+      const internalKey = process.env.X_INTERNAL_KEY;
 
       if (!authHeader) {
         throw new HttpException(
@@ -76,9 +75,7 @@ export class RecommendationController {
 
       // Get the authorization token from the request headers
       const authHeader = this.getHeaderValue(request.headers.authorization);
-      const internalKey = this.getHeaderValue(
-        request.headers['x-internal-key'],
-      );
+      const internalKey = process.env.X_INTERNAL_KEY;
 
       if (!authHeader) {
         throw new HttpException(
@@ -104,8 +101,8 @@ export class RecommendationController {
       }
 
       return await this.recommendationService.getUserRecommendations(
-        userId,
-        movieId,
+        userId.toString(),
+        movieId.toString(),
         topN,
         authHeader,
         internalKey,
@@ -125,9 +122,7 @@ export class RecommendationController {
 
       // Get the authorization token from the request headers
       const authHeader = this.getHeaderValue(request.headers.authorization);
-      const internalKey = this.getHeaderValue(
-        request.headers['x-internal-key'],
-      );
+      const internalKey = process.env.X_INTERNAL_KEY;
 
       if (!authHeader) {
         throw new HttpException(

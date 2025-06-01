@@ -8,6 +8,7 @@ import { HttpException, HttpStatus } from '@nestjs/common';
 @Injectable()
 export class RecommendationService {
   private readonly RECOMMENDATION_API_URL: string;
+  private readonly RECOMMENDATION_API_PORT: string;
   private readonly logger = new Logger(RecommendationService.name);
 
   constructor(
@@ -17,6 +18,10 @@ export class RecommendationService {
     this.RECOMMENDATION_API_URL = this.configService.get<string>(
       'HARMONI_RECOMMENDATION_API_URL',
       'http://167.86.104.161',
+    );
+    this.RECOMMENDATION_API_PORT = this.configService.get<string>(
+      'HARMONI_RECOMMENDATION_API_PORT',
+      ':8020',
     );
   }
 
@@ -28,10 +33,13 @@ export class RecommendationService {
     try {
       const response = await firstValueFrom(
         this.httpService
-          .get(`${this.RECOMMENDATION_API_URL}${endpoint}`, {
-            params,
-            headers,
-          })
+          .get(
+            `${this.RECOMMENDATION_API_URL}${this.RECOMMENDATION_API_PORT}${endpoint}`,
+            {
+              params,
+              headers,
+            },
+          )
           .pipe(
             catchError((error) => {
               this.logger.error(`API request failed: ${error.message}`);
