@@ -894,4 +894,15 @@ export class AnimeService {
       expiry: Date.now() + this.CACHE_TTL,
     });
   }
+
+  /**
+   * Clears the internal cache
+   * @returns The number of cache entries that were cleared
+   */
+  public clearCache(): number {
+    const size = this.cache.size;
+    this.cache.clear();
+    this.logger.log(`Cleared ${size} entries from cache`);
+    return size;
+  }
 }
