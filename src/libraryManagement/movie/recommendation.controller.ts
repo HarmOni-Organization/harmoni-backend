@@ -3,19 +3,18 @@ import {
   Get,
   Query,
   InternalServerErrorException,
-  HttpStatus,
-  HttpException,
   Req,
   Logger,
+  HttpException,
 } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
-import { catchError, firstValueFrom } from 'rxjs';
 import {
   GenreRecommendationDto,
   MovieRecommendationDto,
 } from './dto/recommendation.dto';
 import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
+import { RecommendationService } from './recommendation.service';
 
 // Extended Request type that includes the user property
 interface RequestWithUser extends Request {
@@ -30,37 +29,48 @@ export class RecommendationController {
   constructor(
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
+    private readonly recommendationService: RecommendationService,
   ) {
     this.RECOMMENDATION_API_URL = this.configService.get<string>(
       'HARMONI_RECOMMENDATION_API_URL',
-      'http://167.86.104.161',
+      'http://167.86.104.161:8020',
     );
   }
 
   @Get('genre')
-  async getGenreRecommendations(@Query() query: GenreRecommendationDto) {
+  async getGenreRecommendations(
+    @Query() query: GenreRecommendationDto,
+    @Req() request: RequestWithUser,
+  ) {
     try {
-      const { genre, topN = 30 } = query;
-
-      const response = await firstValueFrom(
-        this.httpService
-          .get(`${this.RECOMMENDATION_API_URL}/genreBasedRecommendation`, {
-            params: { genre, topN },
-          })
-          .pipe(
-            catchError((error) => {
-              console.error('Genre recommendation request failed:', error);
-              throw new HttpException(
-                'Recommendation service is currently unavailable',
-                error.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
-              );
-            }),
-          ),
+      this.logger.debug(
+        `Genre recommendation request: ${JSON.stringify(query)}`,
       );
+      const { authorization: authToken } = request.headers;
 
-      return response.data;
+      const result =
+        await this.recommendationService.getGenreBasedRecommendations(
+          query,
+          authToken,
+        );
+
+      this.logger.debug(
+        `Successfully returned ${result.total} recommendations`,
+      );
+      return result;
     } catch (error) {
-      console.error('Failed to fetch genre recommendations:', error);
+      this.logger.error('Failed to fetch genre recommendations:', {
+        message: error.message,
+        status: error.status,
+        query,
+      });
+
+      // Re-throw HttpExceptions from the service as-is
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      // For other errors, throw as internal server error
       throw new InternalServerErrorException(
         error.message || 'Failed to fetch genre recommendations',
       );
@@ -73,43 +83,34 @@ export class RecommendationController {
     @Query() query: MovieRecommendationDto,
   ) {
     try {
-      const { movieId, topN = 24 } = query;
+      this.logger.debug(
+        `User recommendation request: ${JSON.stringify(query)}`,
+      );
+      const { authorization: authToken } = request.headers;
 
-      // Debug user object structure
-      this.logger.debug(`User object: ${JSON.stringify(request.user)}`);
-
-      // Extract userId - Try different properties that might contain the user ID
-      const userId =
-        request.user?._id || request.user?.userId || request.user?.id;
-
-      this.logger.debug(`Extracted userId: ${userId}`);
-
-      if (!userId) {
-        throw new HttpException(
-          'User ID not found in request. Authentication required.',
-          HttpStatus.UNAUTHORIZED,
-        );
-      }
-
-      const response = await firstValueFrom(
-        this.httpService
-          .get(`${this.RECOMMENDATION_API_URL}/recommend`, {
-            params: { userId, movieId, topN },
-          })
-          .pipe(
-            catchError((error) => {
-              console.error('User recommendation request failed:', error);
-              throw new HttpException(
-                'Recommendation service is currently unavailable',
-                error.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
-              );
-            }),
-          ),
+      const result = await this.recommendationService.getUserRecommendations(
+        request.user,
+        query,
+        authToken,
       );
 
-      return response.data;
+      this.logger.debug(
+        `Successfully returned ${result.total} recommendations`,
+      );
+      return result;
     } catch (error) {
-      console.error('Failed to fetch user recommendations:', error);
+      this.logger.error('Failed to fetch user recommendations:', {
+        message: error.message,
+        status: error.status,
+        query,
+      });
+
+      // Re-throw HttpExceptions from the service as-is
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      // For other errors, throw as internal server error
       throw new InternalServerErrorException(
         error.message || 'Failed to fetch user recommendations',
       );
@@ -119,17 +120,35 @@ export class RecommendationController {
   @Get('test')
   async testRecommendation() {
     try {
-      this.logger.debug('Testing recommendation endpoint');
-      return {
-        success: true,
-        message: 'Recommendation controller is working',
-        api_url: this.RECOMMENDATION_API_URL,
-      };
+      this.logger.debug('Testing recommendation service...');
+      const result = await this.recommendationService.testConnection();
+      this.logger.debug(
+        `Test result: ${result.success ? 'SUCCESS' : 'FAILED'}`,
+      );
+      return result;
     } catch (error) {
       this.logger.error(`Test recommendation failed: ${error.message}`);
       throw new InternalServerErrorException(
         error.message || 'Test recommendation failed',
       );
+    }
+  }
+
+  @Get('debug')
+  async getDebugInfo() {
+    try {
+      return {
+        success: true,
+        message: 'Debug information',
+        data: {
+          apiUrl: this.RECOMMENDATION_API_URL,
+          timestamp: new Date().toISOString(),
+          environment: process.env.NODE_ENV || 'development',
+        },
+      };
+    } catch (error) {
+      this.logger.error('Failed to get debug info:', error);
+      throw new InternalServerErrorException('Failed to get debug info');
     }
   }
 }
