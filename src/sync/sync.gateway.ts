@@ -17,7 +17,7 @@ import { AuthGuard, ValidateRoomAccessGuard } from 'src/guards';
 import { FileInfo, Room, RoomInfo, SyncState } from './sync.interfaces';
 import { formatTime, generateRoomId } from './sync.utils';
 import { RoomStatus, RoomType, MemberRole, SyncActions } from 'src/constants';
-import { SyncActionProcessor } from './sync.service';
+import { SyncService } from './sync.service';
 
 @WebSocketGateway({
   namespace: '/watch-together',
@@ -33,7 +33,7 @@ export class SyncGateway
 
   constructor(
     private readonly authMiddleware: AuthMiddleware,
-    private readonly syncActionProcessor: SyncActionProcessor,
+    private readonly syncService: SyncService,
     @Inject('ROOMS') private readonly rooms: Record<string, Room>,
     @InjectModel(RoomSchema.name) private readonly roomModel: Model<RoomSchema>,
   ) {}
@@ -130,8 +130,13 @@ export class SyncGateway
       // Join the Socket.IO room
       client.join(roomId);
 
+      client.emit('roomCreated', {
+        roomId,
+        roomInfo: newRoom.roomInfo,
+      });
+
       // Create a system message for room creation
-      const message = await this.syncActionProcessor.addSystemMessage(
+      const message = await this.syncService.addSystemMessage(
         roomId,
         `🎬 Room "${newRoom.roomInfo.name}" created by ${user.username}`,
       );
@@ -220,15 +225,14 @@ export class SyncGateway
     client.join(roomId);
 
     // Create and broadcast a system message for user joining
-    const message = await this.syncActionProcessor.addSystemMessage(
+    const message = await this.syncService.addSystemMessage(
       roomId,
       `👋 ${user.username} joined the room`,
     );
     this.server.to(roomId).emit('newMessage', { roomId, message });
 
     // Get recent messages and send them to the joining user
-    const recentMessages =
-      await this.syncActionProcessor.getRecentMessages(roomId);
+    const recentMessages = await this.syncService.getRecentMessages(roomId);
     if (recentMessages.length > 0) {
       client.emit('chatHistory', { roomId, messages: recentMessages });
     }
@@ -263,7 +267,7 @@ export class SyncGateway
 
     if (this.rooms[roomId]) {
       // Create and broadcast system message before removing the user
-      const message = await this.syncActionProcessor.addSystemMessage(
+      const message = await this.syncService.addSystemMessage(
         roomId,
         `👋 ${user.username} left the room`,
       );
@@ -321,7 +325,7 @@ export class SyncGateway
       );
 
       // Create and send a system message for room closure
-      const message = await this.syncActionProcessor.addSystemMessage(
+      const message = await this.syncService.addSystemMessage(
         roomId,
         `🏁 Room closed – thanks for watching!`,
       );
@@ -365,7 +369,7 @@ export class SyncGateway
 
     // Create and broadcast a system message for room updates
     if (updates.name) {
-      const message = await this.syncActionProcessor.addSystemMessage(
+      const message = await this.syncService.addSystemMessage(
         roomId,
         `📝 ${user.username} renamed the room to "${updates.name}"`,
       );
@@ -442,7 +446,7 @@ export class SyncGateway
 
       // Create and broadcast a system message for file update
       if (fileInfo.name) {
-        const message = await this.syncActionProcessor.addSystemMessage(
+        const message = await this.syncService.addSystemMessage(
           roomId,
           `📁 ${username} is now watching "${fileInfo.name}"`,
         );
@@ -516,7 +520,7 @@ export class SyncGateway
     }
 
     // Process the action
-    const result = this.syncActionProcessor.processAction(room, action, value);
+    const result = this.syncService.processAction(room, action, value);
     if (!result.updated) {
       client.emit('error', { message: result.error });
       return;
@@ -537,7 +541,7 @@ export class SyncGateway
     }
 
     if (messageContent) {
-      const message = await this.syncActionProcessor.addSystemMessage(
+      const message = await this.syncService.addSystemMessage(
         roomId,
         messageContent,
       );
@@ -563,6 +567,57 @@ export class SyncGateway
   handlePing(@ConnectedSocket() client: Socket) {
     console.log(`Ping received from client: ${client.id}`);
     client.emit('pong', { message: 'pong' });
+  }
+
+  @SubscribeMessage('chat:send')
+  @UseGuards(AuthGuard)
+  async handleChatMessage(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { roomId: string; text: string },
+  ): Promise<void> {
+    const { roomId, text } = data;
+    const { userId, username } = client.data.user;
+
+    try {
+      // Validate room access
+      const hasAccess = await this.syncService.validateRoomAccess(
+        roomId,
+        userId,
+      );
+      if (!hasAccess) {
+        client.emit('chat:error', {
+          message: 'You do not have access to this room',
+        });
+        return;
+      }
+
+      // Create and persist the message
+      const message = await this.syncService.createMessage(
+        roomId,
+        userId,
+        username,
+        text,
+      );
+
+      // Broadcast the message to all clients in the room
+      this.server.to(roomId).emit('chat:receive', {
+        roomId,
+        message: {
+          userId,
+          username,
+          text,
+          createdAt: message.createdAt,
+        },
+      });
+
+      // Send acknowledgment to the sender
+      client.emit('chat:ack', { messageId: message._id });
+
+      console.log(`Chat message sent in room ${roomId} by ${username}`);
+    } catch (error) {
+      console.error('Error handling chat message:', error);
+      client.emit('chat:error', { message: 'Failed to send message' });
+    }
   }
 
   private async removeClientFromRoom(
@@ -638,7 +693,7 @@ export class SyncGateway
     // Check if all members are inactive
     if (room.members.length === 0) {
       // Create a final system message before archiving the room
-      const message = await this.syncActionProcessor.addSystemMessage(
+      const message = await this.syncService.addSystemMessage(
         roomId,
         `🏁 Room closed – all users have left`,
       );

@@ -5,11 +5,15 @@ import { JwtService } from '@nestjs/jwt';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Room, RoomSchema } from 'src/schemas/room.schema';
 import { ValidateRoomAccessGuard } from 'src/guards/sync.roomAccess.guard';
-import { SyncActionProcessor } from './sync.service';
+import { SyncService } from './sync.service';
+import { Message, MessageSchema } from './schemas/message.schema';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([{ name: Room.name, schema: RoomSchema }]),
+    MongooseModule.forFeature([
+      { name: Room.name, schema: RoomSchema },
+      { name: Message.name, schema: MessageSchema },
+    ]),
   ],
   providers: [
     {
@@ -25,7 +29,8 @@ import { SyncActionProcessor } from './sync.service';
     },
     AuthMiddleware,
     JwtService,
-    SyncActionProcessor,
+    SyncService,
   ],
+  exports: [SyncService],
 })
 export class SyncModule {}
