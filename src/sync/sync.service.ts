@@ -1,9 +1,21 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
 import { SyncActions } from 'src/constants';
-import { Room } from './sync.interfaces';
+import { Room as RoomSchema } from '../schemas/room.schema';
+import { ChatMessage, Room } from './sync.interfaces';
+import { v4 as uuidv4 } from 'uuid';
+import { Message } from './schemas/message.schema';
 
 @Injectable()
-export class SyncActionProcessor {
+export class SyncService {
+  private readonly logger = new Logger(SyncService.name);
+
+  constructor(
+    @InjectModel(RoomSchema.name) private readonly roomModel: Model<RoomSchema>,
+    @InjectModel(Message.name) private messageModel: Model<Message>,
+  ) {}
+
   processAction(
     room: Room,
     action: SyncActions,
@@ -25,6 +37,110 @@ export class SyncActionProcessor {
         }
       default:
         return { updated: false, error: 'Unhandled action' };
+    }
+  }
+
+  /**
+   * Create and persist a system message for a room
+   * @param roomId The ID of the room
+   * @param content The message content
+   * @returns The created message object
+   */
+  async addSystemMessage(
+    roomId: string,
+    content: string,
+  ): Promise<ChatMessage> {
+    const message: ChatMessage = {
+      messageId: uuidv4(),
+      userId: 'system',
+      username: 'System',
+      content: content,
+      timestamp: new Date().toISOString(),
+      systemMessage: true,
+    };
+
+    try {
+      // Persist the message to the database
+      await this.roomModel.updateOne({ roomId }, { $push: { chat: message } });
+    } catch (error) {
+      console.error(`Failed to save system message for room ${roomId}:`, error);
+      // We still return the message even if DB update fails,
+      // so the message can be shown in the UI
+    }
+
+    return message;
+  }
+
+  /**
+   * Retrieves recent chat messages for a room
+   * @param roomId The ID of the room
+   * @param limit Maximum number of messages to retrieve
+   * @returns Array of chat messages
+   */
+  async getRecentMessages(roomId: string, limit = 50): Promise<ChatMessage[]> {
+    try {
+      const query = this.roomModel.findOne(
+        { roomId },
+        { chat: { $slice: -limit } },
+      );
+
+      // In production, we'll use exec() but in tests the mock might not have it
+      const room =
+        typeof query.exec === 'function' ? await query.exec() : await query;
+
+      return room?.chat || [];
+    } catch (error) {
+      console.error(`Failed to get recent messages for room ${roomId}:`, error);
+      return [];
+    }
+  }
+
+  async createMessage(
+    roomId: string,
+    userId: string,
+    username: string,
+    text: string,
+  ): Promise<Message> {
+    try {
+      const message = await this.messageModel.create({
+        roomId,
+        userId,
+        username,
+        text,
+      });
+      return message;
+    } catch (error) {
+      this.logger.error(`Failed to create message: ${error.message}`);
+      throw error;
+    }
+  }
+
+  // async getRecentMessages(
+  //   roomId: string,
+  //   limit: number = 50,
+  // ): Promise<Message[]> {
+  //   try {
+  //     return await this.messageModel
+  //       .find({ roomId })
+  //       .sort({ createdAt: -1 })
+  //       .limit(limit)
+  //       .exec();
+  //   } catch (error) {
+  //     this.logger.error(`Failed to get recent messages: ${error.message}`);
+  //     throw error;
+  //   }
+  // }
+
+  async validateRoomAccess(roomId: string, userId: string): Promise<boolean> {
+    try {
+      const room = await this.roomModel.findOne({
+        roomId,
+        'members.userId': userId,
+      });
+      return !!room;
+    } catch (error) {
+      this.logger.error(`Failed to validate room access: ${error.message}`);
+      return false;
     }
   }
 }
