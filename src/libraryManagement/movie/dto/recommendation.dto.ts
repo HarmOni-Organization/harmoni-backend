@@ -24,3 +24,11 @@ export class MovieRecommendationDto {
   @Type(() => Number)
   topN?: number;
 }
+
+export class MoviePosterDto {
+  @IsString()
+  movieId?: string;
+
+  @IsString()
+  posterPath?: string;
+}

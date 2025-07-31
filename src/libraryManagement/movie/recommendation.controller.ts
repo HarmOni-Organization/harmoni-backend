@@ -8,14 +8,13 @@ import {
   Req,
   Logger,
 } from '@nestjs/common';
-import { HttpService } from '@nestjs/axios';
-import { catchError, firstValueFrom } from 'rxjs';
 import {
   GenreRecommendationDto,
+  MoviePosterDto,
   MovieRecommendationDto,
 } from './dto/recommendation.dto';
-import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
+import { RecommendationService } from './recommendation.service';
 
 // Extended Request type that includes the user property
 interface RequestWithUser extends Request {
@@ -24,43 +23,45 @@ interface RequestWithUser extends Request {
 
 @Controller('library/recommendations')
 export class RecommendationController {
-  private readonly RECOMMENDATION_API_URL: string;
   private readonly logger = new Logger(RecommendationController.name);
 
-  constructor(
-    private readonly httpService: HttpService,
-    private readonly configService: ConfigService,
-  ) {
-    this.RECOMMENDATION_API_URL = this.configService.get<string>(
-      'HARMONI_RECOMMENDATION_API_URL',
-      'http://167.86.104.161',
-    );
+  constructor(private readonly recommendationService: RecommendationService) {}
+
+  private getHeaderValue(header: string | string[] | undefined): string {
+    if (!header) return '';
+    return Array.isArray(header) ? header[0] : header;
   }
 
   @Get('genre')
-  async getGenreRecommendations(@Query() query: GenreRecommendationDto) {
+  async getGenreRecommendations(
+    @Req() request: RequestWithUser,
+    @Query() query: GenreRecommendationDto,
+  ) {
     try {
       const { genre, topN = 30 } = query;
+      const headers = request.headers;
+      // Get the authorization token and internal key from the request headers
+      const authHeader = this.getHeaderValue(headers.authorization);
+      const internalKey = this.getHeaderValue(headers['x-internal-key']);
 
-      const response = await firstValueFrom(
-        this.httpService
-          .get(`${this.RECOMMENDATION_API_URL}/genreBasedRecommendation`, {
-            params: { genre, topN },
-          })
-          .pipe(
-            catchError((error) => {
-              console.error('Genre recommendation request failed:', error);
-              throw new HttpException(
-                'Recommendation service is currently unavailable',
-                error.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
-              );
-            }),
-          ),
+      if (!authHeader) {
+        throw new HttpException(
+          'Authentication token is required',
+          HttpStatus.UNAUTHORIZED,
+        );
+      }
+
+      return await this.recommendationService.getGenreRecommendations(
+        genre,
+        topN,
+        authHeader,
+        internalKey,
       );
-
-      return response.data;
     } catch (error) {
-      console.error('Failed to fetch genre recommendations:', error);
+      this.logger.error(
+        `Failed to fetch genre recommendations: ${error.message}`,
+        error,
+      );
       throw new InternalServerErrorException(
         error.message || 'Failed to fetch genre recommendations',
       );
@@ -74,6 +75,18 @@ export class RecommendationController {
   ) {
     try {
       const { movieId, topN = 24 } = query;
+
+      // Get the authorization token from the request headers
+      const headers = request.headers;
+      const authHeader = this.getHeaderValue(headers.authorization);
+      const internalKey = this.getHeaderValue(headers['x-internal-key']);
+
+      if (!authHeader) {
+        throw new HttpException(
+          'Authentication token is required',
+          HttpStatus.UNAUTHORIZED,
+        );
+      }
 
       // Debug user object structure
       this.logger.debug(`User object: ${JSON.stringify(request.user)}`);
@@ -91,25 +104,18 @@ export class RecommendationController {
         );
       }
 
-      const response = await firstValueFrom(
-        this.httpService
-          .get(`${this.RECOMMENDATION_API_URL}/recommend`, {
-            params: { userId, movieId, topN },
-          })
-          .pipe(
-            catchError((error) => {
-              console.error('User recommendation request failed:', error);
-              throw new HttpException(
-                'Recommendation service is currently unavailable',
-                error.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
-              );
-            }),
-          ),
+      return await this.recommendationService.getUserRecommendations(
+        userId.toString(),
+        movieId.toString(),
+        topN,
+        authHeader,
+        internalKey,
       );
-
-      return response.data;
     } catch (error) {
-      console.error('Failed to fetch user recommendations:', error);
+      this.logger.error(
+        `Failed to fetch user recommendations: ${error.message}`,
+        error,
+      );
       throw new InternalServerErrorException(
         error.message || 'Failed to fetch user recommendations',
       );
@@ -117,18 +123,65 @@ export class RecommendationController {
   }
 
   @Get('test')
-  async testRecommendation() {
+  async testRecommendation(@Req() request: RequestWithUser) {
     try {
       this.logger.debug('Testing recommendation endpoint');
-      return {
-        success: true,
-        message: 'Recommendation controller is working',
-        api_url: this.RECOMMENDATION_API_URL,
-      };
+
+      // Get the authorization token from the request headers
+      const authHeader = this.getHeaderValue(request.headers.authorization);
+      const internalKey = this.getHeaderValue(
+        request.headers['x-internal-key'],
+      );
+
+      if (!authHeader) {
+        throw new HttpException(
+          'Authentication token is required',
+          HttpStatus.UNAUTHORIZED,
+        );
+      }
+
+      return await this.recommendationService.testAuth(authHeader, internalKey);
     } catch (error) {
       this.logger.error(`Test recommendation failed: ${error.message}`);
       throw new InternalServerErrorException(
         error.message || 'Test recommendation failed',
+      );
+    }
+  }
+
+  @Get('poster')
+  async getPosterMovie(
+    @Req() request: RequestWithUser,
+    @Query() query: MoviePosterDto,
+  ) {
+    try {
+      const { posterPath, movieId } = query;
+
+      const authHeader = this.getHeaderValue(request.headers.authorization);
+      const internalKey = this.getHeaderValue(
+        request.headers['x-internal-key'],
+      );
+
+      if (!authHeader) {
+        throw new HttpException(
+          'Authentication token is required',
+          HttpStatus.UNAUTHORIZED,
+        );
+      }
+
+      return await this.recommendationService.getPosterMovie(
+        posterPath,
+        movieId,
+        authHeader,
+        internalKey,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to fetch poster movie: ${error.message}`,
+        error,
+      );
+      throw new InternalServerErrorException(
+        error.message || 'Failed to fetch poster movie',
       );
     }
   }
